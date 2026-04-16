@@ -5,5 +5,5 @@ import react from '@vitejs/plugin-react'
 // 例: リポジトリが https://github.com/yourname/uta-archive なら '/uta-archive/'
 export default defineConfig({
   plugins: [react()],
-  base: '/stream-s songDB/',
+  base: '/stream-s-songDB/',
 })
