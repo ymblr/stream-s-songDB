@@ -3,7 +3,9 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { PlayerProvider } from './contexts/PlayerContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { SidebarProvider } from './contexts/SidebarContext';
 import Navigation from './components/Navigation';
+import Sidebar from './components/Sidebar';
 import MiniPlayer from './components/MiniPlayer';
 import Home from './pages/Home';
 import Search from './pages/Search';
@@ -17,16 +19,25 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <PlayerProvider>
-          <BrowserRouter basename={basename}>
-            <Navigation />
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/search" element={<Search />} />
-              <Route path="/playlists" element={<Playlists />} />
-              <Route path="/playlist/:id" element={<PlaylistDetail />} />
-            </Routes>
-            <MiniPlayer />
-          </BrowserRouter>
+          <SidebarProvider>
+            <BrowserRouter basename={basename}>
+              <div className="app-layout">
+                <Navigation />
+                <div className="app-body">
+                  <Sidebar />
+                  <main className="main-content">
+                    <Routes>
+                      <Route path="/" element={<Home />} />
+                      <Route path="/search" element={<Search />} />
+                      <Route path="/playlists" element={<Playlists />} />
+                      <Route path="/playlist/:id" element={<PlaylistDetail />} />
+                    </Routes>
+                  </main>
+                </div>
+              </div>
+              <MiniPlayer />
+            </BrowserRouter>
+          </SidebarProvider>
         </PlayerProvider>
       </AuthProvider>
     </ThemeProvider>
