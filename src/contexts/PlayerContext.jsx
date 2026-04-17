@@ -1,190 +1,231 @@
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react';
+import { doc, updateDoc, increment } from 'firebase/firestore';
+import { db } from '../firebase';
 
 const PlayerContext = createContext(null);
+const MAX_HISTORY = 30;
 
 export function PlayerProvider({ children }) {
   const [currentSong, setCurrentSong] = useState(null);
   const [currentPlaylist, setCurrentPlaylist] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [showPlayer, setShowPlayer] = useState(false); // modal style
-  const [loopMode, setLoopMode] = useState('none');
+  const [showPlayer, setShowPlayer] = useState(false);
+  const [loopMode, setLoopMode] = useState('none'); // none | song | playlist
+  const [shuffle, setShuffle] = useState(false);
   const [volume, setVolumeState] = useState(() => parseInt(localStorage.getItem('uta_volume') || '80'));
+  const [history, setHistory] = useState([]); // [{song, playedAt}]
+  const [queue, setQueue] = useState([]); // manual queue for single-song mode
 
-  const ytPlayerRef = useRef(null);
-  const isReadyRef = useRef(false);
-  const endTimeRef = useRef(null);
-  const monitorRef = useRef(null);
-  const pendingRef = useRef(null);
+  const ytRef = useRef(null);
+  const readyRef = useRef(false);
+  const endRef = useRef(null);
+  const monRef = useRef(null);
+  const pendRef = useRef(null);
+  const adRef = useRef(null);
   const songRef = useRef(null);
-  const playlistRef = useRef([]);
-  const indexRef = useRef(0);
+  const plRef = useRef([]);
+  const idxRef = useRef(0);
   const loopRef = useRef('none');
-  const isPlayingRef = useRef(false);
+  const shuffleRef = useRef(false);
+  const isPlayRef = useRef(false);
   const volRef = useRef(80);
-  const adWatchdogRef = useRef(null);
+  const queueRef = useRef([]);
+  // Track visited indices for shuffle (avoid repeats)
+  const shuffleHistRef = useRef([]);
 
   useEffect(() => { songRef.current = currentSong; }, [currentSong]);
-  useEffect(() => { playlistRef.current = currentPlaylist; }, [currentPlaylist]);
-  useEffect(() => { indexRef.current = currentIndex; }, [currentIndex]);
+  useEffect(() => { plRef.current = currentPlaylist; }, [currentPlaylist]);
+  useEffect(() => { idxRef.current = currentIndex; }, [currentIndex]);
   useEffect(() => { loopRef.current = loopMode; }, [loopMode]);
-  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+  useEffect(() => { shuffleRef.current = shuffle; }, [shuffle]);
+  useEffect(() => { isPlayRef.current = isPlaying; }, [isPlaying]);
   useEffect(() => { volRef.current = volume; }, [volume]);
+  useEffect(() => { queueRef.current = queue; }, [queue]);
 
-  const clearMonitor = () => {
-    if (monitorRef.current) { clearInterval(monitorRef.current); monitorRef.current = null; }
-    if (adWatchdogRef.current) { clearTimeout(adWatchdogRef.current); adWatchdogRef.current = null; }
+  const clearMon = () => {
+    if (monRef.current) { clearInterval(monRef.current); monRef.current = null; }
+    if (adRef.current) { clearTimeout(adRef.current); adRef.current = null; }
   };
 
-  const startMonitor = useCallback(() => {
-    clearMonitor();
-    monitorRef.current = setInterval(() => {
-      const player = ytPlayerRef.current;
-      if (!player || !endTimeRef.current) return;
+  const startMon = useCallback(() => {
+    clearMon();
+    monRef.current = setInterval(() => {
+      const p = ytRef.current;
+      if (!p || !endRef.current) return;
       try {
-        if (player.getPlayerState?.() === 1) {
-          const t = player.getCurrentTime?.();
-          if (t != null && t >= endTimeRef.current) handleEndRef.current?.();
+        if (p.getPlayerState?.() === 1) {
+          const t = p.getCurrentTime?.();
+          if (t != null && t >= endRef.current) handleEndRef.current?.();
         }
       } catch {}
     }, 300);
   }, []);
 
-  // Ad mitigation: mute -> load -> seek to startTime -> unmute
-  // This minimizes ad exposure even if it can't fully skip
-  const loadWithAdMitigation = useCallback((player, song) => {
-    const savedVol = volRef.current;
-
-    // Step 1: Mute before loading (silences any pre-roll ad)
-    player.mute();
-
-    // Step 2: Load video
-    player.loadVideoById({
-      videoId: song.videoId,
-      startSeconds: song.startTime,
+  const trackHistory = useCallback((song) => {
+    setHistory(prev => {
+      const next = [{ song, playedAt: Date.now() }, ...prev.filter(h => h.song.id !== song.id)].slice(0, MAX_HISTORY);
+      return next;
     });
+    // Increment playCount in Firestore
+    if (song.id) {
+      updateDoc(doc(db, 'songs', song.id), { playCount: increment(1) }).catch(() => {});
+    }
+  }, []);
 
-    // Step 3: Watchdog - after 1.5s, seek to startTime and unmute
-    // If an ad played, video duration will be short; we can detect and seek
-    adWatchdogRef.current = setTimeout(() => {
+  const adMitigation = useCallback((player, song) => {
+    const vol = volRef.current;
+    player.mute();
+    player.loadVideoById({ videoId: song.videoId, startSeconds: song.startTime });
+    endRef.current = song.endTime;
+
+    adRef.current = setTimeout(() => {
       try {
-        const duration = player.getDuration?.() || 0;
-        const currentTime = player.getCurrentTime?.() || 0;
-
-        // If video duration matches song roughly (not a short ad), we're good
-        // Always seek to startTime to be safe
-        if (currentTime < song.startTime || currentTime > song.endTime) {
-          player.seekTo(song.startTime, true);
-        }
-
-        // Unmute and restore volume
-        player.unMute();
-        player.setVolume(savedVol);
+        const t = player.getCurrentTime?.() || 0;
+        if (t < song.startTime || t > song.endTime) player.seekTo(song.startTime, true);
+        player.unMute(); player.setVolume(vol);
       } catch {}
     }, 1500);
-
-    // Step 4: Also try to unmute after seeking completes
-    setTimeout(() => {
-      try {
-        player.unMute();
-        player.setVolume(savedVol);
-      } catch {}
-    }, 3000);
-
-    endTimeRef.current = song.endTime;
-    setIsPlaying(true);
-    setTimeout(() => startMonitor(), 2000);
-  }, [startMonitor]);
+    setTimeout(() => { try { player.unMute(); player.setVolume(vol); } catch {} }, 3200);
+  }, []);
 
   const handleEndRef = useRef(null);
 
-  const loadSong = useCallback((song, playlist = [], index = 0) => {
-    setCurrentSong(song);
-    setCurrentPlaylist(playlist);
-    setCurrentIndex(index);
-    songRef.current = song;
-    playlistRef.current = playlist;
-    indexRef.current = index;
+  const loadSong = useCallback((song, playlist = [], index = 0, skipHistory = false) => {
+    setCurrentSong(song); setCurrentPlaylist(playlist); setCurrentIndex(index);
+    songRef.current = song; plRef.current = playlist; idxRef.current = index;
+    if (!skipHistory) trackHistory(song);
 
-    const player = ytPlayerRef.current;
-    if (player && isReadyRef.current) {
-      clearMonitor();
-      loadWithAdMitigation(player, song);
+    const player = ytRef.current;
+    if (player && readyRef.current) {
+      clearMon();
+      adMitigation(player, song);
+      setIsPlaying(true);
+      setTimeout(() => startMon(), 2200);
     } else {
-      pendingRef.current = { song, playlist, index };
+      pendRef.current = { song, playlist, index };
     }
-  }, [loadWithAdMitigation]);
+  }, [adMitigation, startMon, trackHistory]);
+
+  const getNextIndex = useCallback(() => {
+    const pl = plRef.current;
+    const idx = idxRef.current;
+    if (pl.length <= 1) return -1;
+    if (shuffleRef.current) {
+      // Pick random unvisited index
+      const visited = shuffleHistRef.current;
+      const available = pl.map((_, i) => i).filter(i => i !== idx && !visited.includes(i));
+      if (available.length === 0) {
+        shuffleHistRef.current = [idx]; // reset, allow replay
+        const all = pl.map((_, i) => i).filter(i => i !== idx);
+        return all[Math.floor(Math.random() * all.length)];
+      }
+      const next = available[Math.floor(Math.random() * available.length)];
+      shuffleHistRef.current = [...visited, idx].slice(-pl.length);
+      return next;
+    }
+    return idx + 1 < pl.length ? idx + 1 : -1;
+  }, []);
 
   handleEndRef.current = () => {
-    clearMonitor();
+    clearMon();
     const loop = loopRef.current;
-    const pl = playlistRef.current;
-    const idx = indexRef.current;
+    const pl = plRef.current;
+    const idx = idxRef.current;
     const song = songRef.current;
 
     if (loop === 'song' && song) {
-      const player = ytPlayerRef.current;
-      if (player) { player.seekTo(song.startTime, true); player.playVideo(); endTimeRef.current = song.endTime; setTimeout(() => startMonitor(), 400); }
-    } else if (idx + 1 < pl.length) {
-      loadSong(pl[idx + 1], pl, idx + 1);
+      const player = ytRef.current;
+      if (player) { player.seekTo(song.startTime, true); player.playVideo(); endRef.current = song.endTime; setTimeout(() => startMon(), 400); }
+      return;
+    }
+
+    // Check queue first (for single-song play)
+    if (pl.length <= 1 && queueRef.current.length > 0) {
+      const [next, ...rest] = queueRef.current;
+      setQueue(rest);
+      loadSong(next, [next], 0);
+      return;
+    }
+
+    const nextIdx = getNextIndex();
+    if (nextIdx !== -1) {
+      loadSong(pl[nextIdx], pl, nextIdx);
     } else if (loop === 'playlist' && pl.length > 0) {
+      shuffleHistRef.current = [];
       loadSong(pl[0], pl, 0);
     } else {
+      // End of playlist — stop completely
       setIsPlaying(false);
+      ytRef.current?.pauseVideo();
     }
   };
 
   const playSong = useCallback((song, playlist = [], index = 0) => {
-    setShowPlayer(false); // keep mini player
+    shuffleHistRef.current = [];
     loadSong(song, playlist.length ? playlist : [song], playlist.length ? index : 0);
   }, [loadSong]);
 
   const togglePlay = useCallback(() => {
-    const player = ytPlayerRef.current;
-    if (!player) return;
-    if (isPlayingRef.current) { player.pauseVideo(); setIsPlaying(false); clearMonitor(); }
-    else { player.playVideo(); setIsPlaying(true); startMonitor(); }
-  }, [startMonitor]);
+    const p = ytRef.current;
+    if (!p) return;
+    if (isPlayRef.current) { p.pauseVideo(); setIsPlaying(false); clearMon(); }
+    else { p.playVideo(); setIsPlaying(true); startMon(); }
+  }, [startMon]);
 
   const playNext = useCallback(() => {
-    const pl = playlistRef.current; const idx = indexRef.current;
-    if (idx + 1 < pl.length) loadSong(pl[idx + 1], pl, idx + 1);
-    else if (loopRef.current === 'playlist' && pl.length > 0) loadSong(pl[0], pl, 0);
-  }, [loadSong]);
+    const pl = plRef.current; const idx = idxRef.current;
+    // Check queue for single-song
+    if (pl.length <= 1 && queueRef.current.length > 0) {
+      const [next, ...rest] = queueRef.current;
+      setQueue(rest);
+      loadSong(next, [next], 0);
+      return;
+    }
+    const nextIdx = getNextIndex();
+    if (nextIdx !== -1) loadSong(pl[nextIdx], pl, nextIdx);
+    else if (loopRef.current === 'playlist' && pl.length > 0) { shuffleHistRef.current = []; loadSong(pl[0], pl, 0); }
+  }, [loadSong, getNextIndex]);
 
   const playPrev = useCallback(() => {
-    const pl = playlistRef.current; const idx = indexRef.current;
+    const pl = plRef.current; const idx = idxRef.current;
     if (idx > 0) loadSong(pl[idx - 1], pl, idx - 1);
-    else ytPlayerRef.current?.seekTo(songRef.current?.startTime ?? 0, true);
+    else ytRef.current?.seekTo(songRef.current?.startTime ?? 0, true);
   }, [loadSong]);
 
   const stopPlayer = useCallback(() => {
-    clearMonitor();
-    ytPlayerRef.current?.pauseVideo();
+    clearMon(); ytRef.current?.pauseVideo();
     setIsPlaying(false); setCurrentSong(null); setCurrentPlaylist([]); setCurrentIndex(0);
-    setShowPlayer(false);
-    songRef.current = null; playlistRef.current = []; indexRef.current = 0;
+    setShowPlayer(false); setQueue([]);
+    songRef.current = null; plRef.current = []; idxRef.current = 0; shuffleHistRef.current = [];
   }, []);
 
   const seekRelative = useCallback((s) => {
-    const player = ytPlayerRef.current; const song = songRef.current;
-    if (!player || !song) return;
-    try {
-      const t = player.getCurrentTime?.() ?? song.startTime;
-      player.seekTo(Math.max(song.startTime, Math.min(song.endTime - 1, t + s)), true);
-    } catch {}
+    const p = ytRef.current; const song = songRef.current;
+    if (!p || !song) return;
+    try { const t = p.getCurrentTime?.() ?? song.startTime; p.seekTo(Math.max(song.startTime, Math.min(song.endTime - 1, t + s)), true); } catch {}
   }, []);
 
   const changeVolume = useCallback((v) => {
     const c = Math.max(0, Math.min(100, v));
     setVolumeState(c); volRef.current = c;
     localStorage.setItem('uta_volume', String(c));
-    const player = ytPlayerRef.current;
-    if (player) { if (c === 0) player.mute(); else { player.unMute(); player.setVolume(c); } }
+    const p = ytRef.current;
+    if (p) { if (c === 0) p.mute(); else { p.unMute(); p.setVolume(c); } }
   }, []);
 
+  const addToQueue = useCallback((song) => {
+    setQueue(prev => [...prev, song]);
+  }, []);
+
+  const removeFromQueue = useCallback((idx) => {
+    setQueue(prev => prev.filter((_, i) => i !== idx));
+  }, []);
+
+  const clearQueue = useCallback(() => setQueue([]), []);
+
   useEffect(() => {
-    const handler = (e) => {
+    const h = (e) => {
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       if (!songRef.current) return;
@@ -197,42 +238,44 @@ export function PlayerProvider({ children }) {
         case 'n': e.preventDefault(); playNext(); break;
         case 'p': e.preventDefault(); playPrev(); break;
         case 'm': e.preventDefault(); changeVolume(volRef.current === 0 ? 80 : 0); break;
+        case 's': e.preventDefault(); setShuffle(x => !x); break;
       }
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
   }, [togglePlay, seekRelative, changeVolume, playNext, playPrev]);
 
   const onPlayerReady = useCallback((player) => {
-    ytPlayerRef.current = player;
-    isReadyRef.current = true;
+    ytRef.current = player; readyRef.current = true;
     player.setVolume(volRef.current);
-    if (pendingRef.current) {
-      const { song, playlist, index } = pendingRef.current;
-      pendingRef.current = null;
-      loadWithAdMitigation(player, song);
-      setCurrentPlaylist(playlist);
-      setCurrentIndex(index);
-      playlistRef.current = playlist;
-      indexRef.current = index;
+    if (pendRef.current) {
+      const { song, playlist, index } = pendRef.current;
+      pendRef.current = null;
+      adMitigation(player, song);
+      setCurrentPlaylist(playlist); setCurrentIndex(index);
+      plRef.current = playlist; idxRef.current = index;
+      setIsPlaying(true);
+      setTimeout(() => startMon(), 2200);
     }
-  }, [loadWithAdMitigation]);
+  }, [adMitigation, startMon]);
 
   const onPlayerStateChange = useCallback((state) => {
-    if (state === 1) { setIsPlaying(true); if (endTimeRef.current) startMonitor(); }
-    else if (state === 2) { setIsPlaying(false); clearMonitor(); }
+    if (state === 1) { setIsPlaying(true); if (endRef.current) startMon(); }
+    else if (state === 2) { setIsPlaying(false); clearMon(); }
     else if (state === 0) { handleEndRef.current?.(); }
-  }, [startMonitor]);
+  }, [startMon]);
 
   return (
     <PlayerContext.Provider value={{
       currentSong, currentPlaylist, currentIndex,
       isPlaying, showPlayer, setShowPlayer,
-      loopMode, setLoopMode, volume, changeVolume,
+      loopMode, setLoopMode, shuffle, setShuffle,
+      volume, changeVolume,
+      history, queue, addToQueue, removeFromQueue, clearQueue,
       playSong, togglePlay, playNext, playPrev,
       stopPlayer, loadSong,
       onPlayerReady, onPlayerStateChange,
-      seekRelative, ytPlayerRef,
+      seekRelative, ytRef,
     }}>
       {children}
     </PlayerContext.Provider>

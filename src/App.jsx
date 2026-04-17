@@ -11,6 +11,7 @@ import Home from './pages/Home';
 import Search from './pages/Search';
 import Playlists from './pages/Playlists';
 import PlaylistDetail from './pages/PlaylistDetail';
+import SongManager from './pages/SongManager';
 
 const basename = import.meta.env.BASE_URL;
 
@@ -31,6 +32,7 @@ export default function App() {
                       <Route path="/search" element={<Search />} />
                       <Route path="/playlists" element={<Playlists />} />
                       <Route path="/playlist/:id" element={<PlaylistDetail />} />
+                      <Route path="/manager" element={<SongManager />} />
                     </Routes>
                   </main>
                 </div>

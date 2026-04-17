@@ -3,10 +3,11 @@ import { collection, query, orderBy, limit, getDocs, where, getCountFromServer }
 import { db } from '../firebase';
 import SongCard from '../components/SongCard';
 import { useNavigate } from 'react-router-dom';
-import { MicIcon, MusicIcon } from '../components/Icons';
+import { MicIcon, MusicIcon, StarIcon } from '../components/Icons';
 
 export default function Home() {
-  const [recentSongs, setRecentSongs] = useState([]);
+  const [popular, setPopular] = useState([]);
+  const [recent, setRecent] = useState([]);
   const [singSongs, setSingSongs] = useState([]);
   const [ukuSongs, setUkuSongs] = useState([]);
   const [singCount, setSingCount] = useState(0);
@@ -17,7 +18,8 @@ export default function Home() {
   useEffect(() => {
     const fetch = async () => {
       try {
-        const [recentSnap, singSnap, ukuSnap, singCountSnap, ukuCountSnap] = await Promise.all([
+        const [popSnap, recentSnap, singSnap, ukuSnap, scSnap, ucSnap] = await Promise.all([
+          getDocs(query(collection(db, 'songs'), orderBy('playCount', 'desc'), limit(6))),
           getDocs(query(collection(db, 'songs'), orderBy('createdAt', 'desc'), limit(6))),
           getDocs(query(collection(db, 'songs'), where('streamType', '==', 'singing'), orderBy('createdAt', 'desc'), limit(6))),
           getDocs(query(collection(db, 'songs'), where('streamType', '==', 'ukulele'), orderBy('createdAt', 'desc'), limit(6))),
@@ -25,49 +27,44 @@ export default function Home() {
           getCountFromServer(query(collection(db, 'songs'), where('streamType', '==', 'ukulele'))),
         ]);
         const toSong = d => ({ id: d.id, ...d.data() });
-        setRecentSongs(recentSnap.docs.map(toSong));
+        setPopular(popSnap.docs.map(toSong).filter(s => (s.playCount || 0) > 0));
+        setRecent(recentSnap.docs.map(toSong));
         setSingSongs(singSnap.docs.map(toSong));
         setUkuSongs(ukuSnap.docs.map(toSong));
-        setSingCount(singCountSnap.data().count);
-        setUkuCount(ukuCountSnap.data().count);
+        setSingCount(scSnap.data().count);
+        setUkuCount(ucSnap.data().count);
       } catch (e) { console.error(e); }
       setLoading(false);
     };
     fetch();
   }, []);
 
-  const Section = ({ title, songs, type }) => (
-    <section style={{ marginBottom: 44 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <h2 style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: 17 }}>{title}</h2>
-          {type && (
-            <span className={type === 'singing' ? 'badge-singing' : 'badge-ukulele'}>
-              {type === 'singing' ? <><MicIcon size={10} /> 歌枠</> : <><MusicIcon size={10} /> ウクレレ枠</>}
-            </span>
-          )}
+  const Section = ({ title, icon, songs, type, badge }) => (
+    <section style={{ marginBottom: 40 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {icon}
+          <h2 style={{ fontFamily: 'var(--font-logo)', fontWeight: 700, fontSize: 16, letterSpacing: '-0.02em' }}>{title}</h2>
+          {badge}
         </div>
-        <button
-          onClick={() => navigate(`/search?type=${type || ''}`)}
-          style={{ fontSize: 12, color: 'var(--text3)', transition: 'color 0.2s', background: 'none', border: 'none', cursor: 'pointer' }}
-          onMouseEnter={e => (e.target.style.color = 'var(--pink)')}
-          onMouseLeave={e => (e.target.style.color = 'var(--text3)')}
-        >
-          すべて表示 →
-        </button>
+        {type !== undefined && (
+          <button onClick={() => navigate(`/search?type=${type || ''}`)}
+            style={{ fontSize: 12, color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', transition: 'color 0.15s' }}
+            onMouseEnter={e => e.target.style.color = 'var(--pink)'}
+            onMouseLeave={e => e.target.style.color = 'var(--text3)'}>
+            すべて表示 →
+          </button>
+        )}
       </div>
       {loading ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
-          {[...Array(4)].map((_, i) => (
-            <div key={i} style={{ background: 'var(--card)', borderRadius: 'var(--radius)', aspectRatio: '1.2', animation: 'pulse 1.5s infinite' }} />
-          ))}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
+          {[...Array(4)].map((_, i) => <div key={i} style={{ background: 'var(--card)', borderRadius: 'var(--radius)', aspectRatio: '1.2', animation: 'pulse 1.5s infinite' }} />)}
         </div>
       ) : songs.length === 0 ? (
         <p style={{ color: 'var(--text3)', fontSize: 13 }}>まだ楽曲がありません</p>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
           {songs.map((song, i) => (
-            // Single song play - pass empty playlist so it plays alone
             <SongCard key={song.id} song={song} playlist={[song]} index={0} />
           ))}
         </div>
@@ -76,60 +73,47 @@ export default function Home() {
   );
 
   return (
-    <div style={{ padding: '80px 28px 120px', maxWidth: 1200, margin: '0 auto' }}>
-      {/* Hero */}
-      <div style={{ marginBottom: 36 }}>
-        <h1 style={{
-          fontFamily: 'Syne, sans-serif',
-          fontSize: 'clamp(28px, 4vw, 44px)',
-          fontWeight: 800,
-          lineHeight: 1.1,
-          marginBottom: 10,
-        }}>
+    <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{ marginBottom: 28 }}>
+        <h1 style={{ fontFamily: 'var(--font-logo)', fontSize: 'clamp(22px, 3.5vw, 36px)', fontWeight: 700, letterSpacing: '-0.03em', marginBottom: 6, lineHeight: 1.1 }}>
           Stream's <span style={{ color: 'var(--pink)' }}>Song DB</span>
         </h1>
-        <p style={{ color: 'var(--text2)', fontSize: 14 }}>
-          歌枠・ウクレレ配信から切り出した楽曲をいつでもどこでも。
-        </p>
+        <p style={{ color: 'var(--text3)', fontSize: 13 }}>歌枠・ウクレレ配信から切り出した楽曲をいつでもどこでも</p>
       </div>
 
-      {/* Stats - cleaner design */}
+      {/* Stats */}
       {!loading && (
-        <div style={{ display: 'flex', gap: 12, marginBottom: 40, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 36, flexWrap: 'wrap' }}>
           {[
             { label: '歌枠', count: singCount, color: 'var(--pink)', bg: 'var(--pink-dim)', Icon: MicIcon, type: 'singing' },
             { label: 'ウクレレ枠', count: ukuCount, color: 'var(--badge-uku-color)', bg: 'var(--badge-uku-bg)', Icon: MusicIcon, type: 'ukulele' },
           ].map(({ label, count, color, bg, Icon, type }) => (
-            <button
-              key={label}
-              onClick={() => navigate(`/search?type=${type}`)}
-              style={{
-                background: bg,
-                border: `1px solid ${color}30`,
-                borderRadius: 14,
-                padding: '16px 24px',
-                minWidth: 140,
-                textAlign: 'left',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.transform = 'translateY(-2px)')}
-              onMouseLeave={e => (e.currentTarget.style.transform = 'none')}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, color }}>
-                <Icon size={14} />
-                <span style={{ fontSize: 12, fontWeight: 600 }}>{label}</span>
+            <button key={label} onClick={() => navigate(`/search?type=${type}`)}
+              style={{ background: bg, border: `1px solid ${color}28`, borderRadius: 12, padding: '14px 20px', minWidth: 120, textAlign: 'left', cursor: 'pointer', transition: 'transform 0.15s' }}
+              onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+              onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, color }}>
+                <Icon size={13} /><span style={{ fontSize: 11, fontWeight: 600 }}>{label}</span>
               </div>
-              <p style={{ fontSize: 26, fontFamily: 'Syne, sans-serif', fontWeight: 800, color, lineHeight: 1 }}>{count}</p>
+              <p className="stat-num" style={{ color }}>{count}</p>
               <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>曲</p>
             </button>
           ))}
         </div>
       )}
 
-      <Section title="最近追加された楽曲" songs={recentSongs} />
-      <Section title="歌枠" songs={singSongs} type="singing" />
-      <Section title="ウクレレ枠" songs={ukuSongs} type="ukulele" />
+      {popular.length > 0 && (
+        <Section
+          title="人気の楽曲"
+          icon={<StarIcon size={16} style={{ color: '#f59e0b' }} />}
+          songs={popular}
+          badge={<span style={{ fontSize: 10, color: 'var(--text3)', background: 'var(--card2)', border: '1px solid var(--border)', borderRadius: 10, padding: '2px 7px' }}>再生数順</span>}
+        />
+      )}
+      <Section title="最近追加された楽曲" songs={recent} type="" />
+      <Section title="歌枠" songs={singSongs} type="singing" badge={<span className="badge-singing"><MicIcon size={10} /> 歌枠</span>} />
+      <Section title="ウクレレ枠" songs={ukuSongs} type="ukulele" badge={<span className="badge-ukulele"><MusicIcon size={10} /> ウクレレ枠</span>} />
     </div>
   );
 }
