@@ -34,81 +34,66 @@ export default function Sidebar() {
     overflow: 'hidden', whiteSpace: 'nowrap',
   });
 
-  const btnHoverStyle = {
+  const btn = {
     display: 'flex', alignItems: 'center', gap: 10,
     padding: '7px 14px', borderRadius: 8, color: 'var(--text2)',
     fontSize: 13, transition: 'all 0.14s', width: '100%', textAlign: 'left',
     overflow: 'hidden', whiteSpace: 'nowrap',
   };
+  const hov = (e, enter) => {
+    e.currentTarget.style.background = enter ? 'var(--card2)' : 'transparent';
+    e.currentTarget.style.color = enter ? 'var(--text)' : 'var(--text2)';
+  };
 
-  const SectionLabel = ({ title }) => (
-    <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.08em', textTransform: 'uppercase', padding: '12px 14px 4px' }}>
-      {title}
-    </p>
-  );
-
-  const Divider = () => <div style={{ height: 1, background: 'var(--border)', margin: '8px 10px' }} />;
+  const SL = ({ t }) => <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.08em', textTransform: 'uppercase', padding: '12px 14px 4px' }}>{t}</p>;
+  const Div = () => <div style={{ height: 1, background: 'var(--border)', margin: '8px 10px' }} />;
 
   return (
     <aside className={`sidebar${sidebarOpen ? '' : ' collapsed'}`}>
       <div style={{ padding: '10px 6px' }}>
-        {/* Main nav */}
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           <NavLink to="/" end style={({ isActive }) => linkCss(isActive)}><HomeIcon size={15} />ホーム</NavLink>
           <NavLink to="/search" style={({ isActive }) => linkCss(isActive)}><SearchIcon size={15} />検索</NavLink>
           <NavLink to="/playlists" style={({ isActive }) => linkCss(isActive)}><ListIcon size={15} />プレイリスト</NavLink>
           <NavLink to="/manager" style={({ isActive }) => linkCss(isActive)}><SettingsIcon size={15} />楽曲管理</NavLink>
         </nav>
-
-        <Divider />
-
-        {/* Recently played */}
+        <Div />
         {history.length > 0 && (
           <>
-            <SectionLabel title="最近再生" />
+            <SL t="最近再生" />
             {history.slice(0, 5).map((h, i) => (
               <button key={h.song.id + i} onClick={() => playSong(h.song, [h.song], 0)}
-                style={btnHoverStyle}
-                onMouseEnter={e => { e.currentTarget.style.background = 'var(--card2)'; e.currentTarget.style.color = 'var(--text)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text2)'; }}>
+                style={btn} onMouseEnter={e => hov(e, true)} onMouseLeave={e => hov(e, false)}>
                 <ClockIcon size={13} style={{ flexShrink: 0, color: 'var(--text3)' }} />
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>{h.song.name}</span>
               </button>
             ))}
-            <Divider />
+            <Div />
           </>
         )}
-
-        {/* Playlists */}
         {playlists.length > 0 && (
           <>
-            <SectionLabel title="プレイリスト" />
+            <SL t="プレイリスト" />
             {playlists.map(pl => (
               <button key={pl.id} onClick={() => navigate(`/playlist/${pl.id}`)}
-                style={btnHoverStyle}
-                onMouseEnter={e => { e.currentTarget.style.background = 'var(--card2)'; e.currentTarget.style.color = 'var(--text)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text2)'; }}>
+                style={btn} onMouseEnter={e => hov(e, true)} onMouseLeave={e => hov(e, false)}>
                 <div style={{ width: 20, height: 20, borderRadius: 4, flexShrink: 0, background: pl.color || 'var(--pink)', opacity: 0.85 }} />
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>{pl.name}</span>
               </button>
             ))}
             <button onClick={() => navigate('/playlists')}
-              style={{ ...btnHoverStyle, color: 'var(--text3)', fontSize: 11, paddingTop: 4, paddingBottom: 4 }}>
+              style={{ ...btn, color: 'var(--text3)', fontSize: 11, paddingTop: 4, paddingBottom: 4 }}>
               <ChevronRightIcon size={11} />すべて表示
             </button>
-            <Divider />
+            <Div />
           </>
         )}
-
-        {/* Artists */}
         {artists.length > 0 && (
           <>
-            <SectionLabel title="アーティスト" />
+            <SL t="アーティスト" />
             {artists.map(a => (
               <button key={a.name} onClick={() => navigate(`/search?q=${encodeURIComponent(a.name)}`)}
-                style={btnHoverStyle}
-                onMouseEnter={e => { e.currentTarget.style.background = 'var(--card2)'; e.currentTarget.style.color = 'var(--text)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text2)'; }}>
+                style={btn} onMouseEnter={e => hov(e, true)} onMouseLeave={e => hov(e, false)}>
                 <div style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, background: a.type === 'singing' ? 'var(--badge-sing-bg)' : 'var(--badge-uku-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: a.type === 'singing' ? 'var(--badge-sing-color)' : 'var(--badge-uku-color)' }}>
                   {a.type === 'singing' ? <MicIcon size={10} /> : <MusicIcon size={10} />}
                 </div>

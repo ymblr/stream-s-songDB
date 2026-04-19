@@ -14,7 +14,7 @@ export default function Navigation() {
   const navigate = useNavigate();
   const [showAdd, setShowAdd] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [q, setQ] = useState('');
 
   const handleAddClick = () => {
     if (isAuthed) setShowAdd(true);
@@ -23,9 +23,7 @@ export default function Navigation() {
 
   const handleSearch = (e) => {
     e.preventDefault();
-    if (searchQuery.trim()) {
-      navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
-    }
+    if (q.trim()) { navigate(`/search?q=${encodeURIComponent(q.trim())}`); setQ(''); }
   };
 
   return (
@@ -35,66 +33,74 @@ export default function Navigation() {
         height: 'var(--nav-h)',
         background: 'var(--nav-bg)',
         backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
         borderBottom: '1px solid var(--border)',
         display: 'flex', alignItems: 'center',
-        padding: '0 16px', gap: 12, zIndex: 200,
+        padding: '0 12px', gap: 8, zIndex: 200,
       }}>
-        {/* Left: hamburger + logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 180, flexShrink: 0 }}>
-          <button onClick={toggleSidebar} className="btn-icon" title="サイドバー">
+        {/* Hamburger + Logo */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          {/* Desktop only hamburger */}
+          <button onClick={toggleSidebar} className="btn-icon"
+            style={{ display: 'none' }}
+            ref={el => { if (el) { el.style.display = window.innerWidth > 768 ? 'flex' : 'none'; } }}>
             <MenuIcon size={18} />
           </button>
-          <span
-            className="logo-text"
-            onClick={() => navigate('/')}
-            style={{ fontSize: 15, color: 'var(--text)', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none' }}
-          >
+          <DesktopHamburger toggleSidebar={toggleSidebar} />
+
+          <span className="logo-text" onClick={() => navigate('/')}
+            style={{ fontSize: 14, color: 'var(--text)', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none' }}>
             Stream's <span style={{ color: 'var(--pink)' }}>Song DB</span>
           </span>
         </div>
 
-        {/* Center: search bar */}
-        <form onSubmit={handleSearch} style={{ flex: 1, maxWidth: 560, margin: '0 auto' }}>
+        {/* Search bar - center */}
+        <form onSubmit={handleSearch} style={{ flex: 1, maxWidth: 520, margin: '0 auto' }}>
           <div style={{ position: 'relative' }}>
-            <SearchIcon size={15} style={{
-              position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)',
-              color: 'var(--text3)', pointerEvents: 'none',
-            }} />
+            <SearchIcon size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
             <input
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="楽曲名・アーティスト名で検索"
-              style={{
-                paddingLeft: 38, paddingRight: 44,
-                height: 38, fontSize: 14,
-                borderRadius: 24,
-                background: 'var(--card2)',
-                border: '1px solid var(--border2)',
-              }}
+              value={q} onChange={e => setQ(e.target.value)}
+              placeholder="楽曲名・アーティスト名"
+              style={{ paddingLeft: 34, paddingRight: 8, height: 36, fontSize: 14, borderRadius: 20 }}
             />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', fontSize: 16 }}
-              >✕</button>
-            )}
           </div>
         </form>
 
-        {/* Right: theme + add */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 180, justifyContent: 'flex-end', flexShrink: 0 }}>
+        {/* Right actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
           <button onClick={toggleTheme} className="btn-icon" title={theme === 'light' ? 'ダーク' : 'ライト'}>
             {theme === 'light' ? <MoonIcon size={16} /> : <SunIcon size={16} />}
           </button>
-          <button onClick={handleAddClick} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', fontSize: 13 }}>
-            <PlusIcon size={13} /> 楽曲を追加
+          <button onClick={handleAddClick} className="btn-primary"
+            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '7px 12px', fontSize: 13 }}>
+            <PlusIcon size={13} />
+            <span style={{ display: 'none' }} className="nav-add-label">楽曲を追加</span>
           </button>
         </div>
       </nav>
 
+      {/* CSS to show label on desktop */}
+      <style>{`
+        @media (min-width: 480px) { .nav-add-label { display: inline !important; } }
+      `}</style>
+
       {showPassword && <PasswordModal onClose={() => setShowPassword(false)} onSuccess={() => setShowAdd(true)} />}
       {showAdd && <AddSongModal onClose={() => setShowAdd(false)} />}
+    </>
+  );
+}
+
+// Separate component to avoid hook-in-ref issues
+function DesktopHamburger({ toggleSidebar }) {
+  return (
+    <>
+      <button onClick={toggleSidebar} className="btn-icon desktop-only">
+        <MenuIcon size={18} />
+      </button>
+      <style>{`
+        .desktop-only { display: none !important; }
+        @media (min-width: 769px) { .desktop-only { display: flex !important; } }
+      `}</style>
     </>
   );
 }
