@@ -38,69 +38,63 @@ export default function Navigation() {
         display: 'flex', alignItems: 'center',
         padding: '0 12px', gap: 8, zIndex: 200,
       }}>
-        {/* Hamburger + Logo */}
+        {/* Left: hamburger (desktop only via CSS) + logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          {/* Desktop only hamburger */}
-          <button onClick={toggleSidebar} className="btn-icon"
-            style={{ display: 'none' }}
-            ref={el => { if (el) { el.style.display = window.innerWidth > 768 ? 'flex' : 'none'; } }}>
+          <button
+            onClick={toggleSidebar}
+            className="btn-icon hamburger-btn"
+            title="サイドバー"
+          >
             <MenuIcon size={18} />
           </button>
-          <DesktopHamburger toggleSidebar={toggleSidebar} />
-
-          <span className="logo-text" onClick={() => navigate('/')}
-            style={{ fontSize: 14, color: 'var(--text)', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none' }}>
+          <span
+            className="logo-text"
+            onClick={() => navigate('/')}
+            style={{ fontSize: 14, color: 'var(--text)', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none' }}
+          >
             Stream's <span style={{ color: 'var(--pink)' }}>Song DB</span>
           </span>
         </div>
 
-        {/* Search bar - center */}
+        {/* Center: search */}
         <form onSubmit={handleSearch} style={{ flex: 1, maxWidth: 520, margin: '0 auto' }}>
           <div style={{ position: 'relative' }}>
             <SearchIcon size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
             <input
-              value={q} onChange={e => setQ(e.target.value)}
+              value={q}
+              onChange={e => setQ(e.target.value)}
               placeholder="楽曲名・アーティスト名"
               style={{ paddingLeft: 34, paddingRight: 8, height: 36, fontSize: 14, borderRadius: 20 }}
             />
           </div>
         </form>
 
-        {/* Right actions */}
+        {/* Right: theme + add */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
           <button onClick={toggleTheme} className="btn-icon" title={theme === 'light' ? 'ダーク' : 'ライト'}>
             {theme === 'light' ? <MoonIcon size={16} /> : <SunIcon size={16} />}
           </button>
-          <button onClick={handleAddClick} className="btn-primary"
-            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '7px 12px', fontSize: 13 }}>
+          <button
+            onClick={handleAddClick}
+            className="btn-primary"
+            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '7px 12px', fontSize: 13 }}
+          >
             <PlusIcon size={13} />
-            <span style={{ display: 'none' }} className="nav-add-label">楽曲を追加</span>
+            <span className="nav-label-text">楽曲を追加</span>
           </button>
         </div>
       </nav>
 
-      {/* CSS to show label on desktop */}
+      {/* Scoped CSS — hamburger desktop only, label visible on wider screens */}
       <style>{`
-        @media (min-width: 480px) { .nav-add-label { display: inline !important; } }
+        .hamburger-btn { display: none; }
+        @media (min-width: 769px) { .hamburger-btn { display: flex !important; } }
+        .nav-label-text { display: none; }
+        @media (min-width: 480px) { .nav-label-text { display: inline; } }
       `}</style>
 
       {showPassword && <PasswordModal onClose={() => setShowPassword(false)} onSuccess={() => setShowAdd(true)} />}
       {showAdd && <AddSongModal onClose={() => setShowAdd(false)} />}
-    </>
-  );
-}
-
-// Separate component to avoid hook-in-ref issues
-function DesktopHamburger({ toggleSidebar }) {
-  return (
-    <>
-      <button onClick={toggleSidebar} className="btn-icon desktop-only">
-        <MenuIcon size={18} />
-      </button>
-      <style>{`
-        .desktop-only { display: none !important; }
-        @media (min-width: 769px) { .desktop-only { display: flex !important; } }
-      `}</style>
     </>
   );
 }

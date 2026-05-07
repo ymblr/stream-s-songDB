@@ -10,16 +10,14 @@
   --shadow: 0 1px 8px rgba(0,0,0,0.07); --shadow-lg: 0 6px 28px rgba(0,0,0,0.13);
   --glow-pink: 0 0 14px rgba(212,84,122,0.22); --transition: 0.18s ease;
   --nav-h: 58px;
-  --bottom-nav-h: 60px; /* mobile bottom nav */
+  --bottom-nav-h: 60px;
   --sidebar-w: 220px;
-  --mini-player-h: 72px; /* height of mini player for padding */
   --nav-bg: rgba(245,244,249,0.94);
   --badge-sing-bg: rgba(212,84,122,0.1); --badge-sing-color: #b03060; --badge-sing-border: rgba(212,84,122,0.22);
   --badge-uku-bg: rgba(45,44,97,0.08); --badge-uku-color: #3d3c7a; --badge-uku-border: rgba(45,44,97,0.18);
   --font-logo: 'IBM Plex Sans JP','Noto Sans JP',sans-serif;
   --font-ui: 'DM Sans','Noto Sans JP',sans-serif;
   --font-body: 'Noto Sans JP',sans-serif;
-  --is-mobile: 0; /* set by JS */
 }
 
 [data-theme="dark"] {
@@ -33,10 +31,13 @@
   --badge-uku-bg: rgba(45,44,97,0.45); --badge-uku-color: #9896e8; --badge-uku-border: rgba(45,44,97,0.7);
 }
 
-html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font-body); font-size: 14px; line-height: 1.6; -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; transition: background 0.22s, color 0.22s; overflow-x: hidden; }
-#root { min-height: 100%; display: flex; flex-direction: column; }
-
-/* Prevent iOS rubber-band on root */
+html, body {
+  height: 100%; background: var(--bg); color: var(--text);
+  font-family: var(--font-body); font-size: 14px; line-height: 1.6;
+  -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent;
+  transition: background 0.22s, color 0.22s; overflow-x: hidden;
+}
+#root { min-height: 100%; }
 body { overscroll-behavior: none; }
 
 ::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -47,17 +48,52 @@ button { font-family: inherit; cursor: pointer; border: none; outline: none; bac
 input, textarea, select { font-family: inherit; color: var(--text); background: var(--card2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 13px; font-size: 14px; outline: none; transition: border-color var(--transition), box-shadow var(--transition); width: 100%; }
 input:focus, textarea:focus, select:focus { border-color: var(--pink); box-shadow: 0 0 0 3px var(--pink-dim); }
 input::placeholder, textarea::placeholder { color: var(--text3); }
+select option { background: var(--card2); }
 
-/* ===== DESKTOP LAYOUT ===== */
-.app-layout { display: flex; flex-direction: column; height: 100%; }
-.app-body { display: flex; flex: 1; overflow: hidden; margin-top: var(--nav-h); }
-.main-content { flex: 1; overflow-y: auto; padding: 24px 28px 120px; min-width: 0; -webkit-overflow-scrolling: touch; }
+/* ===== LAYOUT =====
+   Sidebar is position:fixed so it NEVER scrolls with content.
+   main-content gets margin-left to avoid being hidden under sidebar.
+*/
+.app-layout { display: flex; flex-direction: column; min-height: 100%; }
 
-/* Sidebar */
-.sidebar { width: var(--sidebar-w); flex-shrink: 0; border-right: 1px solid var(--border); background: var(--bg); overflow-y: auto; overflow-x: hidden; margin-left: 0; transition: margin-left 0.22s cubic-bezier(.4,0,.2,1), opacity 0.22s ease; opacity: 1; }
-.sidebar.collapsed { margin-left: calc(-1 * var(--sidebar-w)); opacity: 0; pointer-events: none; }
+/* Fixed sidebar — desktop only */
+.sidebar {
+  position: fixed;
+  top: var(--nav-h);
+  left: 0;
+  bottom: 0;
+  width: var(--sidebar-w);
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  overflow-x: hidden;
+  z-index: 150; /* below nav(200) but above content */
+  /* Slide animation via transform — no text reflow */
+  transform: translateX(0);
+  transition: transform 0.22s cubic-bezier(.4,0,.2,1), opacity 0.22s ease;
+  opacity: 1;
+}
+.sidebar.collapsed {
+  transform: translateX(calc(-1 * var(--sidebar-w)));
+  opacity: 0;
+  pointer-events: none;
+}
+/* Prevent text wrap during animation */
 .sidebar * { white-space: nowrap; }
 .sidebar p, .sidebar span { overflow: hidden; text-overflow: ellipsis; }
+
+/* Main content — pushed right by sidebar width on desktop */
+.main-content {
+  margin-top: var(--nav-h);
+  margin-left: var(--sidebar-w);
+  min-height: calc(100vh - var(--nav-h));
+  padding: 24px 28px 180px;
+  transition: margin-left 0.22s cubic-bezier(.4,0,.2,1);
+  overflow-x: hidden;
+}
+.main-content.sidebar-collapsed {
+  margin-left: 0;
+}
 
 /* ===== BADGES ===== */
 .badge-singing { background: var(--badge-sing-bg); color: var(--badge-sing-color); border: 1px solid var(--badge-sing-border); padding: 2px 7px; border-radius: 20px; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; white-space: nowrap; display: inline-flex; align-items: center; gap: 3px; }
@@ -88,28 +124,21 @@ input::placeholder, textarea::placeholder { color: var(--text3); }
 .logo-text { font-family: var(--font-logo); font-weight: 700; letter-spacing: -0.03em; font-feature-settings: 'palt'; }
 .stat-num { font-family: var(--font-logo); font-weight: 700; font-size: 28px; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 
-/* ===== MOBILE — ≤ 768px ===== */
+/* ===== MOBILE ===== */
 @media (max-width: 768px) {
-  :root {
-    --nav-h: 52px;
+  :root { --nav-h: 52px; }
+
+  /* On mobile: sidebar is hidden (position:fixed so already out of flow) */
+  .sidebar { display: none; }
+
+  /* Main content fills full width, no sidebar margin */
+  .main-content {
+    margin-left: 0 !important;
+    padding: 16px 14px calc(var(--bottom-nav-h) + 100px);
   }
 
-  /* Hide desktop sidebar on mobile */
-  .sidebar { display: none !important; }
-
-  /* Nav becomes compact */
-  .main-content { padding: 16px 14px calc(var(--bottom-nav-h) + 90px); }
-
-  /* Grid adapts */
-  .song-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 10px !important; }
-  .song-grid-single { grid-template-columns: 1fr !important; }
-
-  /* Modal takes more screen */
   .overlay { padding: 0; align-items: flex-end; }
   .modal { border-radius: var(--radius-lg) var(--radius-lg) 0 0; max-height: 92vh; width: 100vw !important; max-width: 100vw !important; }
-
-  /* Add song modal full-screen on mobile */
-  .modal-fullscreen-mobile { max-height: 100dvh !important; border-radius: 0 !important; width: 100vw !important; height: 100dvh !important; }
 }
 
 /* ===== BOTTOM NAV (mobile only) ===== */
@@ -120,6 +149,7 @@ input::placeholder, textarea::placeholder { color: var(--text3); }
   height: var(--bottom-nav-h);
   background: var(--nav-bg);
   backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border-top: 1px solid var(--border);
   z-index: 200;
   padding-bottom: env(safe-area-inset-bottom, 0);
@@ -128,14 +158,12 @@ input::placeholder, textarea::placeholder { color: var(--text3); }
   .bottom-nav { display: flex; align-items: center; justify-content: space-around; }
 }
 
-/* Safe area padding for notch/home indicator */
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
-  .main-content { padding-bottom: calc(var(--bottom-nav-h) + 90px + env(safe-area-inset-bottom)); }
+  @media (max-width: 768px) {
+    .main-content { padding-bottom: calc(var(--bottom-nav-h) + 100px + env(safe-area-inset-bottom)); }
+  }
 }
 
-/* Touch-friendly tap targets */
 @media (max-width: 768px) {
   button { min-height: 36px; }
-  .btn-icon { width: 40px; height: 40px; }
-  .btn-icon-sq { width: 36px; height: 36px; border-radius: 8px; }
 }
