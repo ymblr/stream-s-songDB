@@ -167,3 +167,81 @@ select option { background: var(--card2); }
 @media (max-width: 768px) {
   button { min-height: 36px; }
 }
+
+/* ===== MARQUEE (電光掲示板風スクロール) ===== */
+/*
+  0-10%   : 開始位置で静止（読む時間）
+  10-70%  : 右→左へスクロール（linear）
+  70-88%  : 終端で静止（読む時間）
+  88-89%  : 瞬時に先頭へ戻る
+  89-100% : 先頭で静止（次ループ前の間）
+*/
+@keyframes marquee-scroll {
+  0%,  10%  { transform: translateX(0); }
+  70%, 88%  { transform: translateX(var(--marquee-dist, 0px)); }
+  89%, 100% { transform: translateX(0); }
+}
+
+/* ===== 追加モーション / UX ===== */
+
+/* カード出現 — グリッドで stagger animation-delay を渡す */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* 再生中ドット pulse */
+@keyframes nowPlaying {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.55; transform: scale(0.75); }
+}
+
+/* 再生ボタン押下フィードバック */
+@keyframes playPulse {
+  0%   { box-shadow: var(--glow-pink); }
+  50%  { box-shadow: 0 0 0 8px var(--pink-dim); }
+  100% { box-shadow: var(--glow-pink); }
+}
+
+/* MiniPlayer 初回出現 */
+@keyframes miniPlayerIn {
+  from { opacity: 0; transform: translateY(24px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+/* タッチ端末でボタン押下フィードバックを確実に */
+@media (pointer: coarse) {
+  .btn-icon:active,
+  .btn-icon-sq:active { transform: scale(0.86) !important; }
+  .btn-primary:active  { transform: scale(0.96) !important; }
+}
+
+/* Song カード出現アニメ */
+.song-card-animate {
+  animation: fadeInUp 0.28s ease both;
+}
+
+/* 再生中インジケータ — 小さい丸が脈打つ */
+.now-playing-dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--pink);
+  animation: nowPlaying 1.1s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+/* スクロールリストのアイテム fade */
+@keyframes listItemIn {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.list-item-animate {
+  animation: listItemIn 0.2s ease both;
+}
+
+/* プレイリストパネル open 時 */
+@keyframes panelSlideUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

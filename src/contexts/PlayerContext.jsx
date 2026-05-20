@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react';
-import { doc, updateDoc, increment } from 'firebase/firestore';
+import { doc, updateDoc, increment, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { db } from '../firebase';
 
 const PlayerContext = createContext(null);
@@ -16,6 +16,8 @@ export function PlayerProvider({ children }) {
   const [volume, setVolumeState] = useState(() => parseInt(localStorage.getItem('uta_volume') || '80'));
   const [history, setHistory] = useState([]);
   const [queue, setQueue] = useState([]);
+  // 関連曲自動再生中フラグ（UIで「自動再生中」を示すために使用可能）
+  const [isAutoPlay, setIsAutoPlay] = useState(false);
 
   const ytRef = useRef(null);
   const readyRef = useRef(false);
@@ -46,13 +48,12 @@ export function PlayerProvider({ children }) {
   useEffect(() => { volRef.current = volume; }, [volume]);
   useEffect(() => { queueRef.current = queue; }, [queue]);
 
-  // ── Silent audio element (keeps audio session alive on Android) ──
+  // ── Silent audio (Android バックグラウンド保持) ────────────────
   const initSilentAudio = useCallback(() => {
     if (silentAudioRef.current) return;
     const audio = document.createElement('audio');
     audio.loop = true;
     audio.volume = 0.001;
-    // 1-second silent MP3 as data URI
     audio.src = 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjU0AAAAAAAAAAAAAAAAJAAAAAAAAAAAAYZAoGNXAAAAAAAAAAAAAAAAAAAA//tQZAAP8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAETEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV';
     silentAudioRef.current = audio;
   }, []);
@@ -60,9 +61,7 @@ export function PlayerProvider({ children }) {
   const playSilentAudio = useCallback(() => {
     initSilentAudio();
     const audio = silentAudioRef.current;
-    if (audio && audio.paused) {
-      audio.play().catch(() => {}); // may fail without user gesture
-    }
+    if (audio && audio.paused) audio.play().catch(() => {});
   }, [initSilentAudio]);
 
   // ── Wake Lock ──────────────────────────────────────────────────
@@ -79,79 +78,54 @@ export function PlayerProvider({ children }) {
     wakeLockRef.current = null;
   }, []);
 
-  // Wake lock follows play state
   useEffect(() => {
     if (isPlaying) requestWakeLock();
     else releaseWakeLock();
   }, [isPlaying]);
 
-  // ── Page Visibility — recover after PC sleep ───────────────────
+  // ── Page Visibility (PC スリープ復帰) ────────────────────────
   useEffect(() => {
     const onVisible = async () => {
       if (document.visibilityState !== 'visible') return;
-
-      // Re-acquire wake lock if it was released during sleep
       if (isPlayRef.current) await requestWakeLock();
-
       const player = ytRef.current;
       const song = songRef.current;
       if (!player || !song) return;
-
-      // Give the player a moment to settle after wake
       setTimeout(() => {
         try {
           const state = player.getPlayerState?.();
           const t = player.getCurrentTime?.() ?? 0;
-
           if (isPlayRef.current) {
-            if (state !== 1 /* not playing */) {
-              if (t >= song.endTime) {
-                // Overslept the end — advance
-                handleEndRef.current?.();
-              } else if (t >= song.startTime) {
-                // Just paused by browser — resume
-                player.playVideo();
-              } else {
-                // Somehow behind startTime — seek and play
-                player.seekTo(song.startTime, true);
-                player.playVideo();
-              }
+            if (state !== 1) {
+              if (t >= song.endTime) handleEndRef.current?.();
+              else if (t >= song.startTime) player.playVideo();
+              else { player.seekTo(song.startTime, true); player.playVideo(); }
             }
-            // Re-arm end monitor
             startMon();
           }
         } catch {}
       }, 600);
     };
-
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, []);
 
-  // ── Media Session API ─────────────────────────────────────────
+  // ── Media Session ─────────────────────────────────────────────
   const updateMediaSession = useCallback((song, playing) => {
     if (!('mediaSession' in navigator) || !song) return;
-
     navigator.mediaSession.metadata = new MediaMetadata({
       title: song.name || '不明な楽曲',
-      artist: song.artist || 'Stream\'s Song DB',
+      artist: song.artist || "Stream's Song DB",
       album: song.streamType === 'singing' ? '歌枠' : 'ウクレレ枠',
-      artwork: [{
-        src: song.streamThumbnail || `https://img.youtube.com/vi/${song.videoId}/hqdefault.jpg`,
-        sizes: '480x360', type: 'image/jpeg',
-      }],
+      artwork: [{ src: song.streamThumbnail || `https://img.youtube.com/vi/${song.videoId}/hqdefault.jpg`, sizes: '480x360', type: 'image/jpeg' }],
     });
     navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
   }, []);
 
   const registerMediaSessionHandlers = useCallback(() => {
     if (!('mediaSession' in navigator)) return;
-    navigator.mediaSession.setActionHandler('play', () => {
-      ytRef.current?.playVideo();
-    });
-    navigator.mediaSession.setActionHandler('pause', () => {
-      ytRef.current?.pauseVideo();
-    });
+    navigator.mediaSession.setActionHandler('play', () => { ytRef.current?.playVideo(); });
+    navigator.mediaSession.setActionHandler('pause', () => { ytRef.current?.pauseVideo(); });
     navigator.mediaSession.setActionHandler('nexttrack', () => {
       const pl = plRef.current; const idx = idxRef.current;
       if (idx + 1 < pl.length) loadSong(pl[idx + 1], pl, idx + 1);
@@ -164,18 +138,12 @@ export function PlayerProvider({ children }) {
     navigator.mediaSession.setActionHandler('seekforward', (d) => {
       const s = d.seekOffset ?? 10;
       const player = ytRef.current; const song = songRef.current;
-      if (player && song) {
-        const t = player.getCurrentTime?.() ?? song.startTime;
-        player.seekTo(Math.min(t + s, song.endTime - 1), true);
-      }
+      if (player && song) player.seekTo(Math.min((player.getCurrentTime?.() ?? song.startTime) + s, song.endTime - 1), true);
     });
     navigator.mediaSession.setActionHandler('seekbackward', (d) => {
       const s = d.seekOffset ?? 10;
       const player = ytRef.current; const song = songRef.current;
-      if (player && song) {
-        const t = player.getCurrentTime?.() ?? song.startTime;
-        player.seekTo(Math.max(t - s, song.startTime), true);
-      }
+      if (player && song) player.seekTo(Math.max((player.getCurrentTime?.() ?? song.startTime) - s, song.startTime), true);
     });
   }, []);
 
@@ -209,7 +177,6 @@ export function PlayerProvider({ children }) {
     player.mute();
     player.loadVideoById({ videoId: song.videoId, startSeconds: song.startTime });
     endRef.current = song.endTime;
-
     adRef.current = setTimeout(() => {
       try {
         const t = player.getCurrentTime?.() || 0;
@@ -220,12 +187,46 @@ export function PlayerProvider({ children }) {
     setTimeout(() => { try { player.unMute(); player.setVolume(vol); } catch {} }, 3200);
   }, []);
 
-  // ── Track history & playCount ──────────────────────────────────
+  // ── History & playCount ────────────────────────────────────────
   const trackHistory = useCallback((song) => {
     setHistory(prev =>
       [{ song, playedAt: Date.now() }, ...prev.filter(h => h.song.id !== song.id)].slice(0, MAX_HISTORY)
     );
     if (song.id) updateDoc(doc(db, 'songs', song.id), { playCount: increment(1) }).catch(() => {});
+  }, []);
+
+  // ── 関連曲を Firestore から取得 ────────────────────────────────
+  // 優先順位: 1) 同アーティスト → 2) 同ストリームタイプ → 3) なし
+  const findRelatedSong = useCallback(async (song) => {
+    try {
+      // 1. 同アーティストの曲
+      const artistSnap = await getDocs(
+        query(collection(db, 'songs'), where('artist', '==', song.artist), limit(20))
+      );
+      const artistSongs = artistSnap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(s => s.id !== song.id);
+      if (artistSongs.length > 0) {
+        // 再生数上位3曲からランダム（偏りをやや持たせる）
+        const sorted = artistSongs.sort((a, b) => (b.playCount || 0) - (a.playCount || 0));
+        return sorted[Math.floor(Math.random() * Math.min(3, sorted.length))];
+      }
+
+      // 2. 同ストリームタイプの曲（人気順）
+      const typeSnap = await getDocs(
+        query(collection(db, 'songs'), where('streamType', '==', song.streamType), limit(30))
+      );
+      const typeSongs = typeSnap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(s => s.id !== song.id);
+      if (typeSongs.length > 0) {
+        const sorted = typeSongs.sort((a, b) => (b.playCount || 0) - (a.playCount || 0));
+        return sorted[Math.floor(Math.random() * Math.min(8, sorted.length))];
+      }
+    } catch (e) {
+      console.error('findRelatedSong error:', e);
+    }
+    return null;
   }, []);
 
   // ── Load song ──────────────────────────────────────────────────
@@ -262,34 +263,74 @@ export function PlayerProvider({ children }) {
     return idx + 1 < pl.length ? idx + 1 : -1;
   }, []);
 
+  // ── handleEnd ────────────────────────────────────────────────
   handleEndRef.current = () => {
     clearMon();
     const loop = loopRef.current; const pl = plRef.current;
     const idx = idxRef.current; const song = songRef.current;
 
+    // 1. 1曲ループ
     if (loop === 'song' && song) {
       const p = ytRef.current;
       if (p) { p.seekTo(song.startTime, true); p.playVideo(); endRef.current = song.endTime; setTimeout(() => startMon(), 400); }
       return;
     }
+
+    // 2. キューから次
     if (pl.length <= 1 && queueRef.current.length > 0) {
       const [next, ...rest] = queueRef.current;
       setQueue(rest);
       loadSong(next, [next], 0);
       return;
     }
+
+    // 3. プレイリストの次曲
     const nextIdx = getNextIndex();
     if (nextIdx !== -1) { loadSong(pl[nextIdx], pl, nextIdx); return; }
-    if (loop === 'playlist' && pl.length > 0) { shuffleHistRef.current = []; loadSong(pl[0], pl, 0); return; }
-    // End of everything — truly stop
+
+    // 4. プレイリストループ
+    if (loop === 'playlist' && pl.length > 0) {
+      shuffleHistRef.current = [];
+      loadSong(pl[0], pl, 0);
+      return;
+    }
+
+    // 5. 単曲再生が終わった → 関連曲を自動再生
+    if (pl.length <= 1 && song && loop === 'none') {
+      setIsAutoPlay(true);
+      findRelatedSong(song).then(related => {
+        setIsAutoPlay(false);
+        if (related) {
+          loadSong(related, [related], 0);
+        } else {
+          // 関連曲が見つからない場合のみ停止
+          setIsPlaying(false);
+          ytRef.current?.pauseVideo();
+          updateMediaSession(songRef.current, false);
+          releaseWakeLock();
+          if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none';
+        }
+      }).catch(() => {
+        setIsAutoPlay(false);
+        setIsPlaying(false);
+        ytRef.current?.pauseVideo();
+        updateMediaSession(songRef.current, false);
+        releaseWakeLock();
+      });
+      return;
+    }
+
+    // 6. 完全停止
     setIsPlaying(false);
     ytRef.current?.pauseVideo();
     updateMediaSession(songRef.current, false);
     releaseWakeLock();
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none';
   };
 
   const playSong = useCallback((song, playlist = [], index = 0) => {
     shuffleHistRef.current = [];
+    setIsAutoPlay(false);
     loadSong(song, playlist.length ? playlist : [song], playlist.length ? index : 0);
   }, [loadSong]);
 
@@ -306,7 +347,7 @@ export function PlayerProvider({ children }) {
   }, [startMon, updateMediaSession]);
 
   const playNext = useCallback(() => {
-    const pl = plRef.current; const idx = idxRef.current;
+    const pl = plRef.current;
     if (pl.length <= 1 && queueRef.current.length > 0) {
       const [next, ...rest] = queueRef.current; setQueue(rest); loadSong(next, [next], 0); return;
     }
@@ -324,7 +365,7 @@ export function PlayerProvider({ children }) {
   const stopPlayer = useCallback(() => {
     clearMon(); ytRef.current?.pauseVideo();
     setIsPlaying(false); setCurrentSong(null); setCurrentPlaylist([]); setCurrentIndex(0);
-    setShowPlayer(false); setQueue([]);
+    setShowPlayer(false); setQueue([]); setIsAutoPlay(false);
     songRef.current = null; plRef.current = []; idxRef.current = 0; shuffleHistRef.current = [];
     updateMediaSession(null, false); releaseWakeLock();
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none';
@@ -347,7 +388,7 @@ export function PlayerProvider({ children }) {
   const removeFromQueue = useCallback((i) => setQueue(prev => prev.filter((_, j) => j !== i)), []);
   const clearQueue = useCallback(() => setQueue([]), []);
 
-  // Keyboard shortcuts
+  // ── キーボードショートカット ────────────────────────────────
   useEffect(() => {
     const h = (e) => {
       const tag = document.activeElement?.tagName;
@@ -405,6 +446,7 @@ export function PlayerProvider({ children }) {
       stopPlayer, loadSong,
       onPlayerReady, onPlayerStateChange,
       seekRelative, ytRef,
+      isAutoPlay,
     }}>
       {children}
     </PlayerContext.Provider>

@@ -4,6 +4,7 @@ import { useSidebar } from '../contexts/SidebarContext';
 import { usePlayer } from '../contexts/PlayerContext';
 import { collection, getDocs, query, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
+import MarqueeText from './MarqueeText';
 import { HomeIcon, SearchIcon, ListIcon, MicIcon, MusicIcon, ChevronRightIcon, ClockIcon, SettingsIcon } from './Icons';
 
 export default function Sidebar() {
@@ -75,7 +76,7 @@ export default function Sidebar() {
               <button key={h.song.id + i} onClick={() => playSong(h.song, [h.song], 0)}
                 style={btn} onMouseEnter={e => hov(e, true)} onMouseLeave={e => hov(e, false)}>
                 <ClockIcon size={13} style={{ flexShrink: 0, color: 'var(--text3)' }} />
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>{h.song.name}</span>
+                <MarqueeText text={h.song.name} style={{ flex: 1, fontSize: 13 }} delay={2200} />
               </button>
             ))}
             <Div />
@@ -89,7 +90,7 @@ export default function Sidebar() {
               <button key={pl.id} onClick={() => navigate(`/playlist/${pl.id}`)}
                 style={btn} onMouseEnter={e => hov(e, true)} onMouseLeave={e => hov(e, false)}>
                 <div style={{ width: 20, height: 20, borderRadius: 4, flexShrink: 0, background: pl.color || 'var(--pink)', opacity: 0.85 }} />
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>{pl.name}</span>
+                <MarqueeText text={pl.name} style={{ flex: 1, fontSize: 13 }} delay={2200} />
               </button>
             ))}
             <button onClick={() => navigate('/playlists')} style={{ ...btn, color: 'var(--text3)', fontSize: 11, paddingTop: 4, paddingBottom: 4 }}>

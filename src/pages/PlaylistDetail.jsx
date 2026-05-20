@@ -13,7 +13,8 @@ import {
   useSortable, arrayMove, sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { getThumbnailUrl } from '../utils/youtube';
+import { getThumbnailUrl, secondsToTimestamp } from '../utils/youtube';
+import MarqueeText from './../components/MarqueeText';
 import { PlayIcon, GripIcon, XIcon, EditIcon, TrashIcon, PlusIcon, MicIcon, MusicIcon, ShuffleIcon } from '../components/Icons';
 import PasswordModal from '../components/PasswordModal';
 import PlaylistModal from '../components/PlaylistModal';
@@ -80,10 +81,14 @@ function SortableRow({ song, index, isActive, onPlay, onRemove, isAuthed }) {
 
         {/* Info */}
         <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => onPlay(song, index)}>
-          <p style={{ fontSize: 13, fontWeight: isActive ? 600 : 400, color: isActive ? 'var(--pink)' : 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {song.name}
+          <MarqueeText
+            text={song.name}
+            style={{ fontSize: 13, fontWeight: isActive ? 600 : 400, color: isActive ? 'var(--pink)' : 'var(--text)' }}
+          />
+          <p style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', gap: 6 }}>
+            <span>{song.artist}</span>
+            {(() => { const sec = (song.endTime||0)-(song.startTime||0); return sec > 0 ? <span style={{opacity:0.7}}>{secondsToTimestamp(sec)}</span> : null; })()}
           </p>
-          <p style={{ fontSize: 11, color: 'var(--text3)' }}>{song.artist}</p>
         </div>
 
         {/* Badge */}
