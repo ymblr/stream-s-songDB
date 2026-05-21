@@ -83,6 +83,7 @@ function SortableRow({ song, index, isActive, onPlay, onRemove, isAuthed }) {
         <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => onPlay(song, index)}>
           <MarqueeText
             text={song.name}
+            active={isActive}
             style={{ fontSize: 13, fontWeight: isActive ? 600 : 400, color: isActive ? 'var(--pink)' : 'var(--text)' }}
           />
           <p style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', gap: 6 }}>

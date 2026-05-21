@@ -68,6 +68,7 @@ export default function SongCard({ song, playlist = [], index = 0, compact = fal
           <div style={{ flex: 1, minWidth: 0 }}>
             <MarqueeText
               text={song.name}
+              active={isActive}
               style={{ fontSize: 13, fontWeight: 600, color: isActive ? 'var(--pink)' : 'var(--text)' }}
             />
             <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>{song.artist}</p>
@@ -203,6 +204,7 @@ export default function SongCard({ song, playlist = [], index = 0, compact = fal
           <div style={{ padding: '10px 12px 12px' }}>
             <MarqueeText
               text={song.name}
+              active={isActive}
               style={{
                 fontWeight: 600, fontSize: 13, marginBottom: 2,
                 color: isActive ? 'var(--pink)' : 'var(--text)',

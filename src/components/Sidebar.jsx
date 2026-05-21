@@ -9,7 +9,7 @@ import { HomeIcon, SearchIcon, ListIcon, MicIcon, MusicIcon, ChevronRightIcon, C
 
 export default function Sidebar() {
   const { sidebarOpen } = useSidebar();
-  const { history, playSong } = usePlayer();
+  const { history, currentSong, playSong } = usePlayer();
   const navigate = useNavigate();
   const [playlists, setPlaylists] = useState([]);
   const [artists, setArtists] = useState([]);
@@ -76,7 +76,7 @@ export default function Sidebar() {
               <button key={h.song.id + i} onClick={() => playSong(h.song, [h.song], 0)}
                 style={btn} onMouseEnter={e => hov(e, true)} onMouseLeave={e => hov(e, false)}>
                 <ClockIcon size={13} style={{ flexShrink: 0, color: 'var(--text3)' }} />
-                <MarqueeText text={h.song.name} style={{ flex: 1, fontSize: 13 }} delay={2200} />
+                <MarqueeText text={h.song.name} active={currentSong?.id === h.song.id} style={{ flex: 1, fontSize: 13 }} delay={2200} />
               </button>
             ))}
             <Div />
@@ -90,7 +90,7 @@ export default function Sidebar() {
               <button key={pl.id} onClick={() => navigate(`/playlist/${pl.id}`)}
                 style={btn} onMouseEnter={e => hov(e, true)} onMouseLeave={e => hov(e, false)}>
                 <div style={{ width: 20, height: 20, borderRadius: 4, flexShrink: 0, background: pl.color || 'var(--pink)', opacity: 0.85 }} />
-                <MarqueeText text={pl.name} style={{ flex: 1, fontSize: 13 }} delay={2200} />
+                <MarqueeText text={pl.name} active={false} style={{ flex: 1, fontSize: 13 }} />
               </button>
             ))}
             <button onClick={() => navigate('/playlists')} style={{ ...btn, color: 'var(--text3)', fontSize: 11, paddingTop: 4, paddingBottom: 4 }}>
