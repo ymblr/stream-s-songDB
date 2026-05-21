@@ -261,3 +261,24 @@ select option { background: var(--card2); }
   0%   { background-position: 200% center; }
   100% { background-position: -200% center; }
 }
+
+/* ── ミニプレイヤー内プレイリスト展開アニメ ── */
+@keyframes miniListExpand {
+  from { max-height: 0; opacity: 0; }
+  to   { max-height: 224px; opacity: 1; }
+}
+
+/* ── 音量スライダー (range input) WebKit thumb スタイル ── */
+input[type=range].vol-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--pink);
+  cursor: pointer;
+}
+input[type=range].vol-slider::-moz-range-thumb {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--pink);
+  border: none; cursor: pointer;
+}
