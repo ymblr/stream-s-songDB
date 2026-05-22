@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { usePlayer } from '../contexts/PlayerContext';
 import { loadYouTubeAPI, getThumbnailUrl, secondsToTimestamp } from '../utils/youtube';
 import {
@@ -67,7 +68,7 @@ function Seekbar({ song, ytRef, size = 'normal' }) {
   }, [drag, onMove, onUp]);
 
   const active = drag || hover;
-  const h = size === 'large' ? (active ? 6 : 4) : (active ? 5 : 3);
+  const h = size === 'large' ? (active ? 6 : 4) : (active ? 5 : 4);
   const elapsed = song ? secondsToTimestamp(Math.max(0, (song.endTime - song.startTime) * prog)) : '0:00';
   const total   = song ? secondsToTimestamp(song.endTime - song.startTime) : '0:00';
 
@@ -92,30 +93,71 @@ function Seekbar({ song, ytRef, size = 'normal' }) {
   );
 }
 
-// ── インライン音量スライダー（常時表示）──────────────────────
-// ポップアップではなくミニプレイヤー内に埋め込む形
-function VolumeSlider({ volume, onChange }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-      <button
-        className="btn-icon-sq"
-        onClick={() => onChange(volume === 0 ? 80 : 0)}
-        title={volume === 0 ? 'ミュート解除' : 'ミュート'}
-      >
-        <VolumeIcon size={13} muted={volume === 0} />
+// ── VolumeBtn — createPortal でミニプレイヤーのクリッピング回避 ──
+// MiniPlayer に overflow:hidden があると position:fixed の子がクリップされる。
+// createPortal で body 直下にレンダーすることで回避する。
+function VolumeBtn({ volume, onChange }) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef(null);
+  const hideTimer = useRef(null);
+  const [pos, setPos] = useState({ bottom: 200, right: 30 });
+
+  const calcPos = useCallback(() => {
+    if (!btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    setPos({
+      bottom: window.innerHeight - r.top + 10,
+      right: window.innerWidth - r.right + r.width / 2 - 20,
+    });
+  }, []);
+
+  const show = () => { clearTimeout(hideTimer.current); calcPos(); setOpen(true); };
+  const hide = () => { hideTimer.current = setTimeout(() => setOpen(false), 500); };
+  const isTouch = () => window.matchMedia('(pointer:coarse)').matches;
+
+  // ポータル外クリックで閉じる
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (!btnRef.current?.contains(e.target)) setOpen(false); };
+    const t = setTimeout(() => document.addEventListener('pointerdown', handler), 0);
+    return () => { clearTimeout(t); document.removeEventListener('pointerdown', handler); };
+  }, [open]);
+
+  const popup = open ? (
+    <div
+      onMouseEnter={show} onMouseLeave={hide}
+      style={{
+        position: 'fixed', bottom: pos.bottom, right: pos.right,
+        background: 'var(--card)', border: '1px solid var(--border2)',
+        borderRadius: 12, padding: '12px 10px',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.28)',
+        zIndex: 9000,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+        animation: 'slideUp 0.16s ease',
+      }}
+    >
+      <button onClick={() => onChange(volume === 0 ? 80 : 0)}
+        style={{ fontSize: 11, fontWeight: 600, color: volume === 0 ? 'var(--pink)' : 'var(--text2)', marginBottom: 2 }}>
+        {volume === 0 ? '🔇 ミュート' : `${volume}%`}
       </button>
-      <input
-        type="range" min={0} max={100} value={volume}
+      <input type="range" min={0} max={100} value={volume}
         onChange={e => onChange(Number(e.target.value))}
-        style={{
-          width: 52, height: 3, cursor: 'pointer',
-          accentColor: 'var(--pink)',
-          background: `linear-gradient(to right, var(--pink) ${volume}%, var(--border2) ${volume}%)`,
-          borderRadius: 2, outline: 'none', border: 'none',
-          WebkitAppearance: 'none', appearance: 'none',
-        }}
+        style={{ writingMode: 'vertical-lr', direction: 'rtl', width: 4, height: 80, cursor: 'pointer', accentColor: 'var(--pink)', WebkitAppearance: 'slider-vertical' }}
       />
     </div>
+  ) : null;
+
+  return (
+    <>
+      <button ref={btnRef} className="btn-icon-sq"
+        onClick={() => { if (isTouch()) { if (open) setOpen(false); else { calcPos(); setOpen(true); } } else { onChange(volume === 0 ? 80 : 0); } }}
+        onMouseEnter={() => { if (!isTouch()) show(); }}
+        onMouseLeave={hide}
+        title={`音量 ${volume}%`}>
+        <VolumeIcon size={14} muted={volume === 0} />
+      </button>
+      {createPortal(popup, document.body)}
+    </>
   );
 }
 
@@ -174,7 +216,7 @@ function FullPlayerModal({ onClose }) {
                 {isPlaying ? <PauseIcon size={22} /> : <PlayIcon size={22} />}
               </button>
               <button onClick={playNext} disabled={!hasNext} className="btn-icon" style={{ opacity: hasNext ? 1 : 0.3 }}><SkipNextIcon size={18} /></button>
-              <VolumeSlider volume={volume} onChange={changeVolume} />
+              <VolumeBtn volume={volume} onChange={changeVolume} />
             </div>
           </div>
         </div>
@@ -408,16 +450,11 @@ export default function MiniPlayer() {
           <button className="btn-icon-sq" onClick={stopPlayer} title="閉じる"><XIcon size={13} /></button>
         </div>
 
-        {/* ── Row2: アーティスト + 時間 + AUTO ── */}
+        {/* ── Row2: アーティスト + AUTO ── */}
         <div style={{ display: 'flex', alignItems: 'center', padding: '1px 12px 0 64px', gap: 6 }}>
           <p style={{ fontSize: 11, color: 'var(--text3)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.4 }}>
             {currentSong.artist}
           </p>
-          {duration && (
-            <span style={{ fontSize: 10, color: 'var(--text3)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
-              {duration}
-            </span>
-          )}
           {isAutoPlay && (
             <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--pink)', background: 'var(--pink-dim)', borderRadius: 10, padding: '1px 6px', whiteSpace: 'nowrap', flexShrink: 0 }}>
               AUTO
@@ -458,7 +495,7 @@ export default function MiniPlayer() {
 
           {/* 右: 常時表示の音量スライダー・リスト・拡大 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <VolumeSlider volume={volume} onChange={changeVolume} />
+            <VolumeBtn volume={volume} onChange={changeVolume} />
             {hasPlaylist && (
               <button className="btn-icon-sq"
                 onClick={() => setListOpen(o => !o)}
