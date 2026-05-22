@@ -16,42 +16,73 @@ function getDuration(song) {
   return sec > 0 ? secondsToTimestamp(sec) : null;
 }
 
-// ── Seekbar ── シンプル版（広告検知なし・v8相当）──────────────
+// ── Seekbar ─────────────────────────────────────────────────────
+// RAF を1度だけ起動し、song/drag はすべて ref で参照する。
+// useEffect([song, drag]) のストールクロージャ問題を完全回避。
 function Seekbar({ song, ytRef, size = 'normal' }) {
-  const [prog, setProg] = useState(0);
-  const [drag, setDrag] = useState(false);
+  const [prog, setProg]   = useState(0);
+  const [drag, setDrag]   = useState(false);
   const [hover, setHover] = useState(false);
-  const barRef = useRef(null);
-  const raf = useRef(null);
+  const barRef  = useRef(null);
+  const rafRef  = useRef(null);
+  // ↓ クロージャに捕捉させず、常に最新値を参照するための ref
+  const songRef = useRef(song);
+  const dragRef = useRef(false);
 
+  // song が変わったら ref 更新 + prog をリセット
+  useEffect(() => {
+    songRef.current = song;
+    setProg(0);
+  }, [song]);
+
+  // drag が変わったら ref だけ更新（RAF 再起動しない）
+  useEffect(() => { dragRef.current = drag; }, [drag]);
+
+  // RAF は一度だけ起動。依存配列 [] でマウント時のみ。
   useEffect(() => {
     const tick = () => {
-      if (!drag && ytRef.current && song) {
+      const s = songRef.current;
+      if (!dragRef.current && ytRef.current && s) {
         try {
-          const t = ytRef.current.getCurrentTime?.() ?? 0;
-          const dur = song.endTime - song.startTime;
-          if (dur > 0) setProg(Math.max(0, Math.min(1, (t - song.startTime) / dur)));
+          const t   = ytRef.current.getCurrentTime?.() ?? 0;
+          const dur = s.endTime - s.startTime;
+          if (dur > 0) {
+            setProg(Math.max(0, Math.min(1, (t - s.startTime) / dur)));
+          }
         } catch {}
       }
-      raf.current = requestAnimationFrame(tick);
+      rafRef.current = requestAnimationFrame(tick);
     };
-    raf.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf.current);
-  }, [song, drag]);
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, []); // ← 空: 一度だけ起動、以後は ref 経由で最新値を読む
 
+  // ── ドラッグ操作 ──────────────────────────────────────────
   const getR = (e) => {
     if (!barRef.current) return 0;
     const r = barRef.current.getBoundingClientRect();
     const x = e.touches ? e.touches[0].clientX : e.clientX;
     return Math.max(0, Math.min(1, (x - r.left) / r.width));
   };
-  const commit = useCallback((r) => {
-    if (song && ytRef.current)
-      ytRef.current.seekTo(song.startTime + r * (song.endTime - song.startTime), true);
-  }, [song]);
+
+  const commitRef = useRef(null);
+  commitRef.current = (r) => {
+    const s = songRef.current;
+    if (s && ytRef.current)
+      ytRef.current.seekTo(s.startTime + r * (s.endTime - s.startTime), true);
+  };
+
   const onDown = (e) => { e.stopPropagation(); setDrag(true); setProg(getR(e)); };
-  const onMove = useCallback((e) => { if (drag) setProg(getR(e)); }, [drag]);
-  const onUp   = useCallback((e) => { if (!drag) return; setDrag(false); commit(getR(e)); }, [drag, commit]);
+
+  // onMove / onUp も ref で最新値を参照
+  const onMove = useCallback((e) => {
+    if (dragRef.current) setProg(getR(e));
+  }, []);
+  const onUp = useCallback((e) => {
+    if (!dragRef.current) return;
+    setDrag(false);
+    commitRef.current(getR(e));
+  }, []);
 
   useEffect(() => {
     if (!drag) return;
@@ -67,22 +98,39 @@ function Seekbar({ song, ytRef, size = 'normal' }) {
     };
   }, [drag, onMove, onUp]);
 
-  const active = drag || hover;
-  const h = size === 'large' ? (active ? 6 : 4) : (active ? 5 : 4);
+  const active  = drag || hover;
+  const h       = size === 'large' ? (active ? 6 : 4) : (active ? 5 : 4);
   const elapsed = song ? secondsToTimestamp(Math.max(0, (song.endTime - song.startTime) * prog)) : '0:00';
   const total   = song ? secondsToTimestamp(song.endTime - song.startTime) : '0:00';
 
   return (
     <div>
-      <div ref={barRef}
+      <div
+        ref={barRef}
         onMouseDown={onDown} onTouchStart={onDown}
         onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
         style={{ height: size === 'large' ? 24 : 20, display: 'flex', alignItems: 'center', cursor: 'pointer', userSelect: 'none', touchAction: 'none' }}
       >
-        <div style={{ width: '100%', height: h, background: 'var(--border2)', borderRadius: 4, position: 'relative', transition: 'height 0.1s' }}>
-          <div style={{ height: '100%', width: `${prog * 100}%`, background: 'var(--pink)', borderRadius: 4, transition: drag ? 'none' : 'width 0.08s linear' }} />
+        <div style={{ width: '100%', height: h, background: 'var(--border2)', borderRadius: 4, position: 'relative', transition: 'height 0.12s' }}>
+          {/* ピンクの進行バー */}
+          <div style={{
+            height: '100%',
+            width: `${prog * 100}%`,
+            background: 'var(--pink)',
+            borderRadius: 4,
+            transition: drag ? 'none' : 'width 0.1s linear',
+          }} />
+          {/* ホバー/ドラッグ時のつまみ */}
           {active && (
-            <div style={{ position: 'absolute', top: '50%', left: `${prog * 100}%`, transform: 'translate(-50%,-50%)', width: 13, height: 13, borderRadius: '50%', background: 'var(--pink)', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }} />
+            <div style={{
+              position: 'absolute', top: '50%',
+              left: `${prog * 100}%`,
+              transform: 'translate(-50%, -50%)',
+              width: 13, height: 13, borderRadius: '50%',
+              background: 'var(--pink)',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
+              pointerEvents: 'none',
+            }} />
           )}
         </div>
       </div>
