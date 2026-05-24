@@ -146,7 +146,8 @@ function Seekbar({ song, ytRef, size = 'normal' }) {
 // createPortal で body 直下にレンダーすることで回避する。
 function VolumeBtn({ volume, onChange }) {
   const [open, setOpen] = useState(false);
-  const btnRef = useRef(null);
+  const btnRef  = useRef(null);
+  const popRef  = useRef(null); // ← popup div への ref
   const hideTimer = useRef(null);
   const [pos, setPos] = useState({ bottom: 200, right: 30 });
 
@@ -163,16 +164,21 @@ function VolumeBtn({ volume, onChange }) {
   const hide = () => { hideTimer.current = setTimeout(() => setOpen(false), 500); };
   const isTouch = () => window.matchMedia('(pointer:coarse)').matches;
 
-  // ポータル外クリックで閉じる
+  // popup の外（btnもpopupも外）をクリックしたとき閉じる
   useEffect(() => {
     if (!open) return;
-    const handler = (e) => { if (!btnRef.current?.contains(e.target)) setOpen(false); };
+    const handler = (e) => {
+      if (btnRef.current?.contains(e.target)) return;
+      if (popRef.current?.contains(e.target)) return; // ← popup内はOK
+      setOpen(false);
+    };
     const t = setTimeout(() => document.addEventListener('pointerdown', handler), 0);
     return () => { clearTimeout(t); document.removeEventListener('pointerdown', handler); };
   }, [open]);
 
   const popup = open ? (
     <div
+      ref={popRef}
       onMouseEnter={show} onMouseLeave={hide}
       style={{
         position: 'fixed', bottom: pos.bottom, right: pos.right,
@@ -382,18 +388,22 @@ export default function MiniPlayer() {
   const duration    = getDuration(currentSong);
   const hasPlaylist = currentPlaylist.length > 1;
 
-  const hiddenPlayer = (
-    <div style={{ position: 'fixed', top: -9999, left: -9999, width: 1, height: 1, overflow: 'hidden', pointerEvents: 'none' }}>
-      <div ref={playerDivRef} />
-    </div>
-  );
-
-  if (!currentSong) return hiddenPlayer;
+  // ── hiddenPlayer は return 内で常に同じ位置に置く ──────────
+  // "if (!currentSong) return hiddenPlayer" にすると、
+  // currentSong が null→非null に変わった瞬間コンポーネントの
+  // ルート要素が変わり React が div を unmount→remount してしまう。
+  // YT player はその div に attach されているため壊れてしまう。
 
   return (
     <>
-      {hiddenPlayer}
-      {showPlayer && <FullPlayerModal onClose={() => setShowPlayer(false)} />}
+      {/* 常にここ・常に同じ位置 → 絶対に unmount しない */}
+      <div style={{ position: 'fixed', top: -9999, left: -9999, width: 1, height: 1, overflow: 'hidden', pointerEvents: 'none' }}>
+        <div ref={playerDivRef} />
+      </div>
+
+      {currentSong && showPlayer && <FullPlayerModal onClose={() => setShowPlayer(false)} />}
+      {currentSong && (
+        <>
 
       {/*
         ミニプレイヤーカード
@@ -412,6 +422,9 @@ export default function MiniPlayer() {
         boxShadow: '0 8px 32px rgba(0,0,0,0.22)',
         zIndex: 300,
         overflow: 'hidden',
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        cursor: 'default',
       }}>
 
         {/* ── プレイリスト（カード上部に展開、アニメ付き）── */}
@@ -463,7 +476,8 @@ export default function MiniPlayer() {
                     }
                   </div>
                   <img src={getThumbnailUrl(s.videoId, 'mq')} alt=""
-                    style={{ width: 40, height: 22, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} />
+                    draggable={false}
+                  style={{ width: 40, height: 22, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     {/* 再生中の曲だけスクロール、それ以外は ellipsis */}
                     <MarqueeText text={s.name} active={isActive}
@@ -488,6 +502,7 @@ export default function MiniPlayer() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px 1px' }}>
           <img src={getThumbnailUrl(currentSong.videoId, 'hq')} alt=""
             onClick={() => setShowPlayer(true)}
+            draggable={false}
             style={{ width: 44, height: 25, objectFit: 'cover', borderRadius: 4, flexShrink: 0, cursor: 'pointer' }}
           />
           <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => setShowPlayer(true)}>
@@ -558,6 +573,8 @@ export default function MiniPlayer() {
           </div>
         </div>
       </div>
-    </>
+    </> /* currentSong && */
+    )}
+  </> /* root fragment */
   );
 }
