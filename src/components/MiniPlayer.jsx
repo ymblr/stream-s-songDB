@@ -16,160 +16,96 @@ function getDuration(song) {
   return sec > 0 ? secondsToTimestamp(sec) : null;
 }
 
-// ── Seekbar ─────────────────────────────────────────────────────
-// RAF を1度だけ起動し、song/drag はすべて ref で参照する。
-// useEffect([song, drag]) のストールクロージャ問題を完全回避。
+// ── Seekbar — v8 オリジナルそのまま ──────────────────────────
 function Seekbar({ song, ytRef, size = 'normal' }) {
-  const [prog, setProg]   = useState(0);
-  const [drag, setDrag]   = useState(false);
+  const [prog, setProg] = useState(0);
+  const [drag, setDrag] = useState(false);
   const [hover, setHover] = useState(false);
-  const barRef  = useRef(null);
-  const rafRef  = useRef(null);
-  // ↓ クロージャに捕捉させず、常に最新値を参照するための ref
-  const songRef = useRef(song);
-  const dragRef = useRef(false);
+  const barRef = useRef(null);
+  const raf = useRef(null);
 
-  // song が変わったら ref 更新 + prog をリセット
-  useEffect(() => {
-    songRef.current = song;
-    setProg(0);
-  }, [song]);
-
-  // drag が変わったら ref だけ更新（RAF 再起動しない）
-  useEffect(() => { dragRef.current = drag; }, [drag]);
-
-  // RAF は一度だけ起動。依存配列 [] でマウント時のみ。
   useEffect(() => {
     const tick = () => {
-      const s = songRef.current;
-      if (!dragRef.current && ytRef.current && s) {
+      if (!drag && ytRef.current && song) {
         try {
-          const t   = ytRef.current.getCurrentTime?.() ?? 0;
-          const dur = s.endTime - s.startTime;
-          if (dur > 0) {
-            setProg(Math.max(0, Math.min(1, (t - s.startTime) / dur)));
-          }
+          const t = ytRef.current.getCurrentTime?.() ?? 0;
+          setProg(Math.max(0, Math.min(1, (t - song.startTime) / (song.endTime - song.startTime))));
         } catch {}
       }
-      rafRef.current = requestAnimationFrame(tick);
+      raf.current = requestAnimationFrame(tick);
     };
-    rafRef.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, []); // ← 空: 一度だけ起動、以後は ref 経由で最新値を読む
+    raf.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf.current);
+  }, [song, drag]);
 
-  // ── ドラッグ操作 ──────────────────────────────────────────
   const getR = (e) => {
     if (!barRef.current) return 0;
     const r = barRef.current.getBoundingClientRect();
     const x = e.touches ? e.touches[0].clientX : e.clientX;
     return Math.max(0, Math.min(1, (x - r.left) / r.width));
   };
-
-  const commitRef = useRef(null);
-  commitRef.current = (r) => {
-    const s = songRef.current;
-    if (s && ytRef.current)
-      ytRef.current.seekTo(s.startTime + r * (s.endTime - s.startTime), true);
-  };
-
+  const commit = useCallback((r) => {
+    if (song && ytRef.current) ytRef.current.seekTo(song.startTime + r * (song.endTime - song.startTime), true);
+  }, [song]);
   const onDown = (e) => { e.stopPropagation(); setDrag(true); setProg(getR(e)); };
-
-  // onMove / onUp も ref で最新値を参照
-  const onMove = useCallback((e) => {
-    if (dragRef.current) setProg(getR(e));
-  }, []);
-  const onUp = useCallback((e) => {
-    if (!dragRef.current) return;
-    setDrag(false);
-    commitRef.current(getR(e));
-  }, []);
+  const onMove = useCallback((e) => { if (drag) setProg(getR(e)); }, [drag]);
+  const onUp = useCallback((e) => { if (!drag) return; setDrag(false); commit(getR(e)); }, [drag, commit]);
 
   useEffect(() => {
     if (!drag) return;
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    window.addEventListener('touchmove', onMove, { passive: false });
-    window.addEventListener('touchend', onUp);
+    window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
+    window.addEventListener('touchmove', onMove, { passive: false }); window.addEventListener('touchend', onUp);
     return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-      window.removeEventListener('touchmove', onMove);
-      window.removeEventListener('touchend', onUp);
+      window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onMove); window.removeEventListener('touchend', onUp);
     };
   }, [drag, onMove, onUp]);
 
-  const active  = drag || hover;
-  const h       = size === 'large' ? (active ? 6 : 4) : (active ? 5 : 4);
-  const elapsed = song ? secondsToTimestamp(Math.max(0, (song.endTime - song.startTime) * prog)) : '0:00';
-  const total   = song ? secondsToTimestamp(song.endTime - song.startTime) : '0:00';
-
+  const active = drag || hover;
+  const h = size === 'large' ? (active ? 6 : 4) : (active ? 5 : 3);
   return (
     <div>
-      <div
-        ref={barRef}
-        onMouseDown={onDown} onTouchStart={onDown}
+      <div ref={barRef} onMouseDown={onDown} onTouchStart={onDown}
         onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-        style={{ height: size === 'large' ? 24 : 20, display: 'flex', alignItems: 'center', cursor: 'pointer', userSelect: 'none', touchAction: 'none' }}
-      >
-        <div style={{ width: '100%', height: h, background: 'var(--border2)', borderRadius: 4, position: 'relative', transition: 'height 0.12s' }}>
-          {/* ピンクの進行バー */}
-          <div style={{
-            height: '100%',
-            width: `${prog * 100}%`,
-            background: 'var(--pink)',
-            borderRadius: 4,
-            transition: drag ? 'none' : 'width 0.1s linear',
-          }} />
-          {/* ホバー/ドラッグ時のつまみ */}
-          {active && (
-            <div style={{
-              position: 'absolute', top: '50%',
-              left: `${prog * 100}%`,
-              transform: 'translate(-50%, -50%)',
-              width: 13, height: 13, borderRadius: '50%',
-              background: 'var(--pink)',
-              boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
-              pointerEvents: 'none',
-            }} />
-          )}
+        style={{ height: size === 'large' ? 24 : 20, display: 'flex', alignItems: 'center', cursor: 'pointer', userSelect: 'none', touchAction: 'none' }}>
+        <div style={{ width: '100%', height: h, background: 'var(--border2)', borderRadius: 4, position: 'relative', transition: 'height 0.1s' }}>
+          <div style={{ height: '100%', width: `${prog * 100}%`, background: 'var(--pink)', borderRadius: 4 }} />
+          {active && <div style={{ position: 'absolute', top: '50%', left: `${prog * 100}%`, transform: 'translate(-50%,-50%)', width: 13, height: 13, borderRadius: '50%', background: 'var(--pink)', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }} />}
         </div>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text3)', marginTop: -2 }}>
-        <span>{elapsed}</span><span>{total}</span>
+        <span>{secondsToTimestamp(song ? (song.endTime - song.startTime) * prog : 0)}</span>
+        <span>{secondsToTimestamp(song ? song.endTime - song.startTime : 0)}</span>
       </div>
     </div>
   );
 }
 
-// ── VolumeBtn — createPortal でミニプレイヤーのクリッピング回避 ──
-// MiniPlayer に overflow:hidden があると position:fixed の子がクリップされる。
-// createPortal で body 直下にレンダーすることで回避する。
+// ── VolumeBtn — createPortal でクリッピング回避 ───────────────
+// position:fixed を overflow:hidden の外に出す
 function VolumeBtn({ volume, onChange }) {
   const [open, setOpen] = useState(false);
-  const btnRef  = useRef(null);
-  const popRef  = useRef(null); // ← popup div への ref
+  const btnRef = useRef(null);
+  const popRef = useRef(null);
   const hideTimer = useRef(null);
   const [pos, setPos] = useState({ bottom: 200, right: 30 });
 
   const calcPos = useCallback(() => {
     if (!btnRef.current) return;
     const r = btnRef.current.getBoundingClientRect();
-    setPos({
-      bottom: window.innerHeight - r.top + 10,
-      right: window.innerWidth - r.right + r.width / 2 - 20,
-    });
+    setPos({ bottom: window.innerHeight - r.top + 10, right: window.innerWidth - r.right + r.width / 2 - 20 });
   }, []);
 
   const show = () => { clearTimeout(hideTimer.current); calcPos(); setOpen(true); };
-  const hide = () => { hideTimer.current = setTimeout(() => setOpen(false), 500); };
+  const hide = () => { hideTimer.current = setTimeout(() => setOpen(false), 600); };
   const isTouch = () => window.matchMedia('(pointer:coarse)').matches;
 
-  // popup の外（btnもpopupも外）をクリックしたとき閉じる
+  // popup の外をクリックしたとき閉じる（popup内はOK）
   useEffect(() => {
     if (!open) return;
     const handler = (e) => {
       if (btnRef.current?.contains(e.target)) return;
-      if (popRef.current?.contains(e.target)) return; // ← popup内はOK
+      if (popRef.current?.contains(e.target)) return;
       setOpen(false);
     };
     const t = setTimeout(() => document.addEventListener('pointerdown', handler), 0);
@@ -177,27 +113,21 @@ function VolumeBtn({ volume, onChange }) {
   }, [open]);
 
   const popup = open ? (
-    <div
-      ref={popRef}
-      onMouseEnter={show} onMouseLeave={hide}
+    <div ref={popRef} onMouseEnter={show} onMouseLeave={hide}
       style={{
         position: 'fixed', bottom: pos.bottom, right: pos.right,
         background: 'var(--card)', border: '1px solid var(--border2)',
         borderRadius: 12, padding: '12px 10px',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.28)',
-        zIndex: 9000,
+        boxShadow: 'var(--shadow-lg)', zIndex: 9000,
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-        animation: 'slideUp 0.16s ease',
-      }}
-    >
+      }}>
       <button onClick={() => onChange(volume === 0 ? 80 : 0)}
         style={{ fontSize: 11, fontWeight: 600, color: volume === 0 ? 'var(--pink)' : 'var(--text2)', marginBottom: 2 }}>
-        {volume === 0 ? '🔇 ミュート' : `${volume}%`}
+        {volume === 0 ? '🔇 ミュート中' : `${volume}%`}
       </button>
       <input type="range" min={0} max={100} value={volume}
         onChange={e => onChange(Number(e.target.value))}
-        style={{ writingMode: 'vertical-lr', direction: 'rtl', width: 4, height: 80, cursor: 'pointer', accentColor: 'var(--pink)', WebkitAppearance: 'slider-vertical' }}
-      />
+        style={{ writingMode: 'vertical-lr', direction: 'rtl', width: 4, height: 80, cursor: 'pointer', accentColor: 'var(--pink)', WebkitAppearance: 'slider-vertical' }} />
     </div>
   ) : null;
 
@@ -217,13 +147,7 @@ function VolumeBtn({ volume, onChange }) {
 
 // ── Full Player Modal ─────────────────────────────────────────
 function FullPlayerModal({ onClose }) {
-  const {
-    currentSong, currentPlaylist, currentIndex,
-    isPlaying, loopMode, setLoopMode, shuffle, setShuffle,
-    volume, changeVolume, togglePlay, playNext, playPrev,
-    loadSong, queue, removeFromQueue, clearQueue, ytRef,
-  } = usePlayer();
-
+  const { currentSong, currentPlaylist, currentIndex, isPlaying, loopMode, setLoopMode, shuffle, setShuffle, volume, changeVolume, togglePlay, playNext, playPrev, loadSong, queue, removeFromQueue, clearQueue, ytRef } = usePlayer();
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex < currentPlaylist.length - 1 || queue.length > 0;
   const loopOrder = ['none', 'song', 'playlist'];
@@ -244,12 +168,11 @@ function FullPlayerModal({ onClose }) {
               </p>
               <button className="btn-icon" onClick={onClose}><XIcon size={16} /></button>
             </div>
-            <div style={{ width: '100%', aspectRatio: '16/9', borderRadius: 10, overflow: 'hidden', background: '#000', marginBottom: 14, boxShadow: '0 8px 32px rgba(0,0,0,0.28)' }}>
+            <div style={{ width: '100%', aspectRatio: '16/9', borderRadius: 10, overflow: 'hidden', background: '#000', marginBottom: 14, boxShadow: 'var(--shadow-lg)' }}>
               <img src={getThumbnailUrl(currentSong.videoId, 'hq')} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             </div>
             <MarqueeText text={currentSong.name} active={true}
-              style={{ fontFamily: 'var(--font-logo)', fontSize: 16, fontWeight: 700, letterSpacing: '-0.02em', marginBottom: 2 }}
-            />
+              style={{ fontFamily: 'var(--font-logo)', fontSize: 16, fontWeight: 700, letterSpacing: '-0.02em', marginBottom: 2 }} />
             <p style={{ color: 'var(--text2)', fontSize: 13, marginBottom: 4 }}>{currentSong.artist}</p>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
               <span className={currentSong.streamType === 'singing' ? 'badge-singing' : 'badge-ukulele'} style={{ display: 'inline-flex' }}>
@@ -262,11 +185,7 @@ function FullPlayerModal({ onClose }) {
               <button onClick={() => setShuffle(s => !s)} className="btn-icon-sq" style={{ color: shuffle ? 'var(--pink)' : 'var(--text3)' }}><ShuffleIcon size={15} /></button>
               <button onClick={cycleLoop} className="btn-icon-sq" style={{ color: loopMode !== 'none' ? 'var(--pink)' : 'var(--text3)' }}><LoopBtn size={15} /></button>
               <button onClick={playPrev} disabled={!hasPrev} className="btn-icon" style={{ opacity: hasPrev ? 1 : 0.3 }}><SkipPrevIcon size={18} /></button>
-              <button onClick={togglePlay}
-                onMouseDown={e => { e.currentTarget.style.transform = 'scale(0.92)'; }}
-                onMouseUp={e => { e.currentTarget.style.transform = 'scale(1)'; }}
-                onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
-                style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--pink)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--glow-pink)', flexShrink: 0, transition: 'transform 0.12s ease' }}>
+              <button onClick={togglePlay} style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--pink)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--glow-pink)', flexShrink: 0 }}>
                 {isPlaying ? <PauseIcon size={22} /> : <PlayIcon size={22} />}
               </button>
               <button onClick={playNext} disabled={!hasNext} className="btn-icon" style={{ opacity: hasNext ? 1 : 0.3 }}><SkipNextIcon size={18} /></button>
@@ -274,7 +193,6 @@ function FullPlayerModal({ onClose }) {
             </div>
           </div>
         </div>
-        {/* 右: プレイリスト / キュー */}
         <div style={{ width: 200, borderLeft: '1px solid var(--border)', overflowY: 'auto', flexShrink: 0, background: 'var(--bg2)' }} className="full-player-sidebar">
           {isSingle ? (
             <>
@@ -283,46 +201,37 @@ function FullPlayerModal({ onClose }) {
                 {queue.length > 0 && <button onClick={clearQueue} className="btn-icon-sq" style={{ width: 22, height: 22 }}><TrashIcon size={11} /></button>}
               </div>
               {queue.length === 0
-                ? <p style={{ padding: '20px 14px', fontSize: 12, color: 'var(--text3)', textAlign: 'center', lineHeight: 1.6 }}>＋ボタンでキューに追加</p>
-                : queue.map((s, i) => {
-                    const d = getDuration(s);
-                    return (
-                      <div key={s.id + i}
-                        style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 12px' }}
-                        onMouseEnter={e => e.currentTarget.style.background = 'var(--card)'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                        <img src={getThumbnailUrl(s.videoId, 'mq')} alt="" style={{ width: 36, height: 20, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} />
-                        <div style={{ minWidth: 0, flex: 1 }}>
-                          <MarqueeText text={s.name} active={false} style={{ fontSize: 11 }} />
-                          <p style={{ fontSize: 10, color: 'var(--text3)' }}>{d ? `${s.artist} · ${d}` : s.artist}</p>
-                        </div>
-                        <button onClick={() => removeFromQueue(i)} className="btn-icon-sq" style={{ width: 20, height: 20, flexShrink: 0 }}><XIcon size={10} /></button>
-                      </div>
-                    );
-                  })
+                ? <p style={{ padding: '20px 14px', fontSize: 12, color: 'var(--text3)', textAlign: 'center', lineHeight: 1.6 }}>楽曲カードの＋ボタンで追加</p>
+                : queue.map((s, i) => (
+                  <div key={s.id + i} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 12px' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--card)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                    <img src={getThumbnailUrl(s.videoId, 'mq')} alt="" style={{ width: 36, height: 20, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} />
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <MarqueeText text={s.name} active={false} style={{ fontSize: 11 }} />
+                      <p style={{ fontSize: 10, color: 'var(--text3)' }}>{s.artist}</p>
+                    </div>
+                    <button onClick={() => removeFromQueue(i)} className="btn-icon-sq" style={{ width: 20, height: 20, flexShrink: 0 }}><XIcon size={10} /></button>
+                  </div>
+                ))
               }
             </>
           ) : (
             <>
-              <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', padding: '12px 12px 8px', textTransform: 'uppercase', letterSpacing: '0.07em', position: 'sticky', top: 0, background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
-                再生リスト
-              </p>
+              <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', padding: '12px 12px 8px', textTransform: 'uppercase', letterSpacing: '0.07em', position: 'sticky', top: 0, background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>再生リスト</p>
               {currentPlaylist.map((s, i) => {
-                const d = getDuration(s);
                 const isActive = i === currentIndex;
                 return (
                   <div key={s.id || i} onClick={() => loadSong(s, currentPlaylist, i)}
                     style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 12px', cursor: 'pointer', background: isActive ? 'var(--pink-dim)' : 'transparent', borderLeft: `2px solid ${isActive ? 'var(--pink)' : 'transparent'}`, transition: 'all 0.12s' }}
                     onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'var(--card2)'; }}
                     onMouseLeave={e => { e.currentTarget.style.background = isActive ? 'var(--pink-dim)' : 'transparent'; }}>
-                    <img src={getThumbnailUrl(s.videoId, 'mq')} alt="" style={{ width: 36, height: 20, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} />
+                    <img src={getThumbnailUrl(s.videoId, 'mq')} alt="" draggable={false} style={{ width: 36, height: 20, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} />
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <MarqueeText text={s.name} active={isActive}
-                        style={{ fontSize: 11, fontWeight: isActive ? 600 : 400, color: isActive ? 'var(--pink)' : 'var(--text)' }}
-                      />
-                      <p style={{ fontSize: 10, color: 'var(--text3)' }}>{d ? `${s.artist} · ${d}` : s.artist}</p>
+                      <MarqueeText text={s.name} active={isActive} style={{ fontSize: 11, fontWeight: isActive ? 600 : 400, color: isActive ? 'var(--pink)' : 'var(--text)' }} />
+                      <p style={{ fontSize: 10, color: 'var(--text3)' }}>{s.artist}</p>
                     </div>
-                    {isActive && <span className="now-playing-dot" style={{ width: 6, height: 6 }} />}
+                    {isActive && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--pink)', flexShrink: 0 }} />}
                   </div>
                 );
               })}
@@ -342,15 +251,7 @@ const MINI_RIGHT          = 14;
 const MINI_W_DESKTOP      = 316;
 
 export default function MiniPlayer() {
-  const {
-    currentSong, currentPlaylist, currentIndex,
-    isPlaying, showPlayer, setShowPlayer,
-    loopMode, setLoopMode, shuffle, setShuffle,
-    volume, changeVolume,
-    togglePlay, playNext, playPrev, stopPlayer,
-    onPlayerReady, onPlayerStateChange,
-    loadSong, ytRef, isAutoPlay,
-  } = usePlayer();
+  const { currentSong, currentPlaylist, currentIndex, isPlaying, showPlayer, setShowPlayer, loopMode, setLoopMode, shuffle, setShuffle, volume, changeVolume, togglePlay, playNext, playPrev, stopPlayer, onPlayerReady, onPlayerStateChange, loadSong, ytRef, isAutoPlay } = usePlayer();
 
   const playerDivRef = useRef(null);
   const [listOpen, setListOpen] = useState(false);
@@ -378,71 +279,42 @@ export default function MiniPlayer() {
     });
   }, []);
 
-  const hasPrev = currentIndex > 0;
-  const hasNext = currentIndex < currentPlaylist.length - 1;
-  const loopOrder = ['none', 'song', 'playlist'];
-  const cycleLoop = () => setLoopMode(loopOrder[(loopOrder.indexOf(loopMode) + 1) % loopOrder.length]);
-  const LoopBtn = loopMode === 'song' ? Repeat1Icon : RepeatIcon;
-  const bottom      = isMobile ? MINI_BOTTOM_MOBILE : MINI_BOTTOM_DESKTOP;
-  const miniWidth   = isMobile ? 'calc(100vw - 28px)' : `${MINI_W_DESKTOP}px`;
-  const duration    = getDuration(currentSong);
+  const hasPrev    = currentIndex > 0;
+  const hasNext    = currentIndex < currentPlaylist.length - 1;
+  const loopOrder  = ['none', 'song', 'playlist'];
+  const cycleLoop  = () => setLoopMode(loopOrder[(loopOrder.indexOf(loopMode) + 1) % loopOrder.length]);
+  const LoopBtn    = loopMode === 'song' ? Repeat1Icon : RepeatIcon;
+  const bottom     = isMobile ? MINI_BOTTOM_MOBILE : MINI_BOTTOM_DESKTOP;
+  const miniWidth  = isMobile ? 'calc(100vw - 28px)' : `${MINI_W_DESKTOP}px`;
   const hasPlaylist = currentPlaylist.length > 1;
 
-  // ── hiddenPlayer は return 内で常に同じ位置に置く ──────────
-  // "if (!currentSong) return hiddenPlayer" にすると、
-  // currentSong が null→非null に変わった瞬間コンポーネントの
-  // ルート要素が変わり React が div を unmount→remount してしまう。
-  // YT player はその div に attach されているため壊れてしまう。
+  // v8 と同じ: currentSong がなければ hidden div だけ返す
+  const hiddenPlayer = (
+    <div style={{ position: 'fixed', top: -9999, left: -9999, width: 1, height: 1, overflow: 'hidden', pointerEvents: 'none' }}>
+      <div ref={playerDivRef} />
+    </div>
+  );
+
+  if (!currentSong) return hiddenPlayer;
 
   return (
     <>
-      {/* 常にここ・常に同じ位置 → 絶対に unmount しない */}
-      <div style={{ position: 'fixed', top: -9999, left: -9999, width: 1, height: 1, overflow: 'hidden', pointerEvents: 'none' }}>
-        <div ref={playerDivRef} />
-      </div>
+      {hiddenPlayer}
+      {showPlayer && <FullPlayerModal onClose={() => setShowPlayer(false)} />}
 
-      {currentSong && showPlayer && <FullPlayerModal onClose={() => setShowPlayer(false)} />}
-      {currentSong && (
-        <>
-
-      {/*
-        ミニプレイヤーカード
-        ・position: fixed + bottom で下に固定
-        ・プレイリストは「同じカードの上部」として展開 → カードが上方向に伸びる
-        ・overflow: hidden でカードの角丸を維持
-      */}
+      {/* ── ミニプレイヤーカード ── */}
       <div style={{
-        position: 'fixed',
-        bottom,
-        right: MINI_RIGHT,
-        width: miniWidth,
-        background: 'var(--card)',
-        border: '1px solid var(--border2)',
-        borderRadius: 14,
-        boxShadow: '0 8px 32px rgba(0,0,0,0.22)',
-        zIndex: 300,
+        position: 'fixed', bottom, right: MINI_RIGHT, width: miniWidth,
+        background: 'var(--card)', border: '1px solid var(--border2)',
+        borderRadius: 14, boxShadow: 'var(--shadow-lg)', zIndex: 300,
         overflow: 'hidden',
-        userSelect: 'none',
-        WebkitUserSelect: 'none',
-        cursor: 'default',
+        userSelect: 'none', WebkitUserSelect: 'none',
       }}>
 
-        {/* ── プレイリスト（カード上部に展開、アニメ付き）── */}
+        {/* プレイリスト（カード上部に展開） */}
         {hasPlaylist && listOpen && (
-          <div style={{
-            borderBottom: '1px solid var(--border)',
-            maxHeight: 224,
-            overflowY: 'auto',
-            animation: 'miniListExpand 0.22s ease',
-          }}>
-            {/* ヘッダー */}
-            <div style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '8px 12px 6px',
-              position: 'sticky', top: 0, zIndex: 1,
-              background: 'var(--card)',
-              borderBottom: '1px solid var(--border)',
-            }}>
+          <div style={{ borderBottom: '1px solid var(--border)', maxHeight: 224, overflowY: 'auto', animation: 'miniListExpand 0.22s ease' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px 6px', position: 'sticky', top: 0, background: 'var(--card)', borderBottom: '1px solid var(--border)', zIndex: 1 }}>
               <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
                 再生リスト · {currentIndex + 1}/{currentPlaylist.length}曲
               </p>
@@ -450,42 +322,20 @@ export default function MiniPlayer() {
                 <ChevronDownIcon size={11} />
               </button>
             </div>
-
-            {/* 曲一覧 */}
             {currentPlaylist.map((s, i) => {
-              const d = getDuration(s);
               const isActive = i === currentIndex;
               return (
-                <div key={s.id || i}
-                  onClick={() => loadSong(s, currentPlaylist, i)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '6px 12px', cursor: 'pointer', minHeight: 42,
-                    background: isActive ? 'var(--pink-dim)' : 'transparent',
-                    borderLeft: `2px solid ${isActive ? 'var(--pink)' : 'transparent'}`,
-                    transition: 'background 0.1s',
-                    animation: `listItemIn 0.18s ${Math.min(i * 0.025, 0.3)}s ease both`,
-                  }}
+                <div key={s.id || i} onClick={() => loadSong(s, currentPlaylist, i)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', cursor: 'pointer', minHeight: 42, background: isActive ? 'var(--pink-dim)' : 'transparent', borderLeft: `2px solid ${isActive ? 'var(--pink)' : 'transparent'}`, transition: 'background 0.1s', animation: `listItemIn 0.18s ${Math.min(i * 0.025, 0.3)}s ease both` }}
                   onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'var(--card2)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = isActive ? 'var(--pink-dim)' : 'transparent'; }}
-                >
+                  onMouseLeave={e => { e.currentTarget.style.background = isActive ? 'var(--pink-dim)' : 'transparent'; }}>
                   <div style={{ width: 16, textAlign: 'center', flexShrink: 0 }}>
-                    {isActive
-                      ? <span className="now-playing-dot" />
-                      : <span style={{ fontSize: 10, color: 'var(--text3)' }}>{i + 1}</span>
-                    }
+                    {isActive ? <span className="now-playing-dot" /> : <span style={{ fontSize: 10, color: 'var(--text3)' }}>{i + 1}</span>}
                   </div>
-                  <img src={getThumbnailUrl(s.videoId, 'mq')} alt=""
-                    draggable={false}
-                  style={{ width: 40, height: 22, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} />
+                  <img src={getThumbnailUrl(s.videoId, 'mq')} alt="" draggable={false} style={{ width: 40, height: 22, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    {/* 再生中の曲だけスクロール、それ以外は ellipsis */}
-                    <MarqueeText text={s.name} active={isActive}
-                      style={{ fontSize: 12, fontWeight: isActive ? 600 : 400, color: isActive ? 'var(--pink)' : 'var(--text)' }}
-                    />
-                    <p style={{ fontSize: 10, color: 'var(--text3)', marginTop: 1 }}>
-                      {s.artist}{d ? ` · ${d}` : ''}
-                    </p>
+                    <MarqueeText text={s.name} active={isActive} style={{ fontSize: 12, fontWeight: isActive ? 600 : 400, color: isActive ? 'var(--pink)' : 'var(--text)' }} />
+                    <p style={{ fontSize: 10, color: 'var(--text3)', marginTop: 1 }}>{s.artist}</p>
                   </div>
                 </div>
               );
@@ -493,27 +343,24 @@ export default function MiniPlayer() {
           </div>
         )}
 
-        {/* ── Seekbar ── */}
+        {/* Seekbar */}
         <div style={{ padding: '10px 13px 0' }}>
           <Seekbar song={currentSong} ytRef={ytRef} />
         </div>
 
-        {/* ── Row1: サムネ + 曲名 + 閉じる ── */}
+        {/* Row1: サムネ + 曲名 + 閉じる */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px 1px' }}>
-          <img src={getThumbnailUrl(currentSong.videoId, 'hq')} alt=""
+          <img src={getThumbnailUrl(currentSong.videoId, 'hq')} alt="" draggable={false}
             onClick={() => setShowPlayer(true)}
-            draggable={false}
-            style={{ width: 44, height: 25, objectFit: 'cover', borderRadius: 4, flexShrink: 0, cursor: 'pointer' }}
-          />
+            style={{ width: 44, height: 25, objectFit: 'cover', borderRadius: 4, flexShrink: 0, cursor: 'pointer' }} />
           <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => setShowPlayer(true)}>
             <MarqueeText text={currentSong.name} active={true} delay={2000}
-              style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-0.01em', lineHeight: 1.3, color: 'var(--text)' }}
-            />
+              style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-0.01em', lineHeight: 1.3 }} />
           </div>
           <button className="btn-icon-sq" onClick={stopPlayer} title="閉じる"><XIcon size={13} /></button>
         </div>
 
-        {/* ── Row2: アーティスト + AUTO ── */}
+        {/* Row2: アーティスト + AUTO */}
         <div style={{ display: 'flex', alignItems: 'center', padding: '1px 12px 0 64px', gap: 6 }}>
           <p style={{ fontSize: 11, color: 'var(--text3)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.4 }}>
             {currentSong.artist}
@@ -525,56 +372,30 @@ export default function MiniPlayer() {
           )}
         </div>
 
-        {/* ── Row3: コントロール ── */}
+        {/* Row3: コントロール */}
         <div style={{ display: 'flex', alignItems: 'center', padding: '5px 9px 9px', justifyContent: 'space-between' }}>
-          {/* 左: シャッフル・ループ */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <button onClick={() => setShuffle(s => !s)} className="btn-icon-sq"
-              style={{ color: shuffle ? 'var(--pink)' : 'var(--text3)' }} title="シャッフル">
-              <ShuffleIcon size={13} />
-            </button>
-            <button onClick={cycleLoop} className="btn-icon-sq"
-              style={{ color: loopMode !== 'none' ? 'var(--pink)' : 'var(--text3)' }} title="ループ">
-              <LoopBtn size={13} />
-            </button>
+            <button onClick={() => setShuffle(s => !s)} className="btn-icon-sq" style={{ color: shuffle ? 'var(--pink)' : 'var(--text3)' }} title="シャッフル"><ShuffleIcon size={13} /></button>
+            <button onClick={cycleLoop} className="btn-icon-sq" style={{ color: loopMode !== 'none' ? 'var(--pink)' : 'var(--text3)' }} title="ループ"><LoopBtn size={13} /></button>
           </div>
-
-          {/* 中: 前・再生/停止・次 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-            <button className="btn-icon-sq" onClick={playPrev} disabled={!hasPrev} style={{ opacity: hasPrev ? 1 : 0.3 }}>
-              <SkipPrevIcon size={14} />
-            </button>
-            <button onClick={togglePlay}
-              onMouseDown={e => { e.currentTarget.style.transform = 'scale(0.88)'; }}
-              onMouseUp={e => { e.currentTarget.style.transform = 'scale(1)'; }}
-              onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
-              style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--pink)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: 'var(--glow-pink)', transition: 'transform 0.12s ease' }}>
+            <button className="btn-icon-sq" onClick={playPrev} disabled={!hasPrev} style={{ opacity: hasPrev ? 1 : 0.3 }}><SkipPrevIcon size={14} /></button>
+            <button onClick={togglePlay} style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--pink)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: 'var(--glow-pink)' }}>
               {isPlaying ? <PauseIcon size={14} /> : <PlayIcon size={14} />}
             </button>
-            <button className="btn-icon-sq" onClick={playNext} disabled={!hasNext} style={{ opacity: hasNext ? 1 : 0.3 }}>
-              <SkipNextIcon size={14} />
-            </button>
+            <button className="btn-icon-sq" onClick={playNext} disabled={!hasNext} style={{ opacity: hasNext ? 1 : 0.3 }}><SkipNextIcon size={14} /></button>
           </div>
-
-          {/* 右: 常時表示の音量スライダー・リスト・拡大 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <VolumeBtn volume={volume} onChange={changeVolume} />
             {hasPlaylist && (
-              <button className="btn-icon-sq"
-                onClick={() => setListOpen(o => !o)}
-                style={{ color: listOpen ? 'var(--pink)' : 'var(--text3)' }}
-                title="再生リスト">
+              <button className="btn-icon-sq" onClick={() => setListOpen(o => !o)} style={{ color: listOpen ? 'var(--pink)' : 'var(--text3)' }} title="再生リスト">
                 <ChevronUpIcon size={13} />
               </button>
             )}
-            <button className="btn-icon-sq" onClick={() => setShowPlayer(true)} title="拡大">
-              <MaximizeIcon size={13} />
-            </button>
+            <button className="btn-icon-sq" onClick={() => setShowPlayer(true)} title="拡大"><MaximizeIcon size={13} /></button>
           </div>
         </div>
       </div>
-    </> /* currentSong && */
-    )}
-  </> /* root fragment */
+    </>
   );
 }
