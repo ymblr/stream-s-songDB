@@ -1,19 +1,106 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { doc, updateDoc, deleteDoc, getDocs, collection, query, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
 import { extractVideoId, fetchVideoInfo, timestampToSeconds, secondsToTimestamp } from '../utils/youtube';
 import { XIcon, TrashIcon } from './Icons';
 
+// ── タグ入力コンポーネント ────────────────────────────────────
+// Enter・カンマ・全角スペースで確定、×で削除
+function TagInput({ tags, onChange }) {
+  const [input, setInput] = useState('');
+  const inputRef = useRef(null);
+
+  const addTag = (raw) => {
+    const val = raw.trim().replace(/[,、　]+$/, '').trim();
+    if (!val || tags.includes(val)) return;
+    onChange([...tags, val]);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ',' || e.key === '、') {
+      e.preventDefault();
+      addTag(input);
+      setInput('');
+    } else if (e.key === 'Backspace' && input === '' && tags.length > 0) {
+      // 空のとき Backspace で最後のタグを削除
+      onChange(tags.slice(0, -1));
+    }
+  };
+
+  const handleChange = (e) => {
+    const val = e.target.value;
+    // カンマ・全角スペースが含まれたら即確定
+    if (val.includes(',') || val.includes('、') || val.includes('　')) {
+      addTag(val);
+      setInput('');
+    } else {
+      setInput(val);
+    }
+  };
+
+  const handleBlur = () => {
+    if (input.trim()) { addTag(input); setInput(''); }
+  };
+
+  return (
+    <div
+      onClick={() => inputRef.current?.focus()}
+      style={{
+        display: 'flex', flexWrap: 'wrap', gap: 5,
+        padding: '6px 10px', minHeight: 40,
+        border: '1px solid var(--border2)', borderRadius: 'var(--radius-sm)',
+        background: 'var(--card2)', cursor: 'text',
+        transition: 'border-color 0.15s',
+      }}
+      onFocus={() => {}}
+    >
+      {tags.map(tag => (
+        <span key={tag} style={{
+          display: 'inline-flex', alignItems: 'center', gap: 3,
+          background: 'var(--pink-dim)', color: 'var(--pink)',
+          border: '1px solid rgba(212,84,122,0.22)',
+          borderRadius: 20, padding: '2px 8px 2px 10px',
+          fontSize: 12, fontWeight: 600, lineHeight: 1.5,
+          whiteSpace: 'nowrap',
+        }}>
+          {tag}
+          <button
+            onMouseDown={e => { e.preventDefault(); onChange(tags.filter(t => t !== tag)); }}
+            style={{ display: 'flex', alignItems: 'center', color: 'var(--pink)', opacity: 0.7, lineHeight: 1, padding: '0 1px' }}
+          >
+            <XIcon size={10} />
+          </button>
+        </span>
+      ))}
+      <input
+        ref={inputRef}
+        value={input}
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
+        onBlur={handleBlur}
+        placeholder={tags.length === 0 ? 'タグを入力（Enterで確定）' : ''}
+        style={{
+          border: 'none', background: 'transparent', outline: 'none',
+          fontSize: 13, minWidth: 120, flex: 1, padding: '2px 0',
+          color: 'var(--text)',
+        }}
+      />
+    </div>
+  );
+}
+
+// ── Edit Modal ────────────────────────────────────────────────
 export default function EditSongModal({ song, onClose, onSave }) {
-  const [name, setName] = useState(song.name || '');
-  const [artist, setArtist] = useState(song.artist || '');
+  const [name, setName]           = useState(song.name || '');
+  const [artist, setArtist]       = useState(song.artist || '');
   const [startTime, setStartTime] = useState(secondsToTimestamp(song.startTime));
-  const [endTime, setEndTime] = useState(secondsToTimestamp(song.endTime));
+  const [endTime, setEndTime]     = useState(secondsToTimestamp(song.endTime));
   const [streamType, setStreamType] = useState(song.streamType || 'singing');
-  const [url, setUrl] = useState(song.streamUrl || '');
+  const [url, setUrl]             = useState(song.streamUrl || '');
   const [videoInfo, setVideoInfo] = useState(null);
-  const [artists, setArtists] = useState([]);
-  const [saving, setSaving] = useState(false);
+  const [artists, setArtists]     = useState([]);
+  const [tags, setTags]           = useState(song.tags || []);
+  const [saving, setSaving]       = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
@@ -39,6 +126,7 @@ export default function EditSongModal({ song, onClose, onSave }) {
         endTime: timestampToSeconds(endTime),
         streamType,
         streamUrl: url,
+        tags,           // ← フリーワードタグ
       });
       onSave?.();
       onClose();
@@ -56,6 +144,12 @@ export default function EditSongModal({ song, onClose, onSave }) {
     } catch (e) {
       alert('削除に失敗しました: ' + e.message);
     }
+  };
+
+  const labelStyle = {
+    fontSize: 11, color: 'var(--text3)', fontWeight: 700,
+    letterSpacing: '0.06em', textTransform: 'uppercase',
+    display: 'block', marginBottom: 6,
   };
 
   return (
@@ -77,7 +171,7 @@ export default function EditSongModal({ song, onClose, onSave }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {/* Stream type */}
           <div>
-            <label style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>配信種別</label>
+            <label style={labelStyle}>配信種別</label>
             <div style={{ display: 'flex', gap: 4, background: 'var(--card2)', borderRadius: 'var(--radius-sm)', padding: 3, width: 'fit-content' }}>
               {[['singing', '歌枠'], ['ukulele', 'ウクレレ枠']].map(([val, label]) => (
                 <button key={val} onClick={() => setStreamType(val)} style={{
@@ -90,30 +184,45 @@ export default function EditSongModal({ song, onClose, onSave }) {
           </div>
 
           <div>
-            <label style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>楽曲名</label>
+            <label style={labelStyle}>楽曲名</label>
             <input value={name} onChange={e => setName(e.target.value)} placeholder="楽曲名" autoFocus />
           </div>
 
           <div>
-            <label style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>アーティスト</label>
+            <label style={labelStyle}>アーティスト</label>
             <input value={artist} onChange={e => setArtist(e.target.value)} placeholder="アーティスト名" list="edit-artists" />
             <datalist id="edit-artists">{artists.map(a => <option key={a} value={a} />)}</datalist>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
-              <label style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>開始</label>
+              <label style={labelStyle}>開始</label>
               <input value={startTime} onChange={e => setStartTime(e.target.value)} placeholder="0:00" style={{ fontFamily: 'monospace', textAlign: 'center' }} />
             </div>
             <div>
-              <label style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>終了</label>
+              <label style={labelStyle}>終了</label>
               <input value={endTime} onChange={e => setEndTime(e.target.value)} placeholder="3:30" style={{ fontFamily: 'monospace', textAlign: 'center' }} />
             </div>
+          </div>
+
+          {/* フリーワードタグ */}
+          <div>
+            <label style={labelStyle}>
+              フリーワード
+              <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--text3)', marginLeft: 8, letterSpacing: 0, textTransform: 'none' }}>
+                検索に使えるキーワードを追加
+              </span>
+            </label>
+            <TagInput tags={tags} onChange={setTags} />
+            {tags.length === 0 && (
+              <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 5 }}>
+                例：サビのみ・低音・クリスマス・アニソン…
+              </p>
+            )}
           </div>
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginTop: 24, alignItems: 'center' }}>
-          {/* Delete */}
           {confirmDelete ? (
             <div style={{ display: 'flex', gap: 6, flex: 1 }}>
               <button onClick={() => setConfirmDelete(false)} className="btn-secondary" style={{ flex: 1, fontSize: 12, padding: '8px' }}>キャンセル</button>

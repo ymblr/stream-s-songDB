@@ -139,6 +139,8 @@ export function searchSongs(songs, query, typeFilter = null) {
       normalizeText(song.name),
       normalizeText(song.artist),
       normalizeText(song.streamTitle || ''),
+      // フリーワードタグも検索対象
+      ...(song.tags || []).map(t => normalizeText(t)),
     ];
 
     return variants.some(variant =>

@@ -81,6 +81,7 @@ export default function AddSongModal({ onClose }) {
           streamTitle: videoInfo?.title || '', streamThumbnail: videoInfo?.thumbnail || '',
           streamType, startTime: timestampToSeconds(row.startTime),
           endTime: timestampToSeconds(row.endTime), playCount: 0,
+          tags: [],
           createdAt: serverTimestamp(),
         });
         count++;
