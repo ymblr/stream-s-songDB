@@ -21,21 +21,69 @@ function InstallBanner() {
   const [prompt, setPrompt] = useState(null);
   const [show, setShow] = useState(false);
   useEffect(() => {
-    const h = (e) => { e.preventDefault(); setPrompt(e); setShow(true); };
+    const h = (e) => {
+      e.preventDefault();
+      setPrompt(e);
+      setShow(true);
+    };
     window.addEventListener('beforeinstallprompt', h);
     return () => window.removeEventListener('beforeinstallprompt', h);
   }, []);
   if (!show) return null;
   return (
-    <div style={{ position: 'fixed', bottom: 80, left: '50%', transform: 'translateX(-50%)', background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, padding: '12px 16px', boxShadow: 'var(--shadow-lg)', zIndex: 400, display: 'flex', alignItems: 'center', gap: 12, maxWidth: 320, width: 'calc(100vw - 28px)', animation: 'slideUp 0.22s ease' }}>
+    <div
+      style={{
+        position: 'fixed',
+        bottom: 80,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        background: 'var(--card)',
+        border: '1px solid var(--border2)',
+        borderRadius: 'var(--radius)',
+        padding: '12px 16px',
+        boxShadow: 'var(--shadow-lg)',
+        zIndex: 400,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        maxWidth: 320,
+        width: 'calc(100vw - 28px)',
+        animation: 'slideUp 0.22s ease',
+      }}
+    >
       <div style={{ fontSize: 24 }}>♪</div>
       <div style={{ flex: 1 }}>
-        <p style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>アプリとして追加</p>
-        <p style={{ fontSize: 11, color: 'var(--text3)' }}>ホーム画面に追加するとより便利に使えます</p>
+        <p style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>
+          アプリとして追加
+        </p>
+        <p style={{ fontSize: 11, color: 'var(--text3)' }}>
+          ホーム画面に追加するとより便利に使えます
+        </p>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flexShrink: 0 }}>
-        <button className="btn-primary" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => { prompt?.prompt(); setShow(false); }}>追加</button>
-        <button onClick={() => setShow(false)} style={{ fontSize: 11, color: 'var(--text3)', textAlign: 'center' }}>後で</button>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 5,
+          flexShrink: 0,
+        }}
+      >
+        <button
+          className="btn-primary"
+          style={{ fontSize: 12, padding: '5px 12px' }}
+          onClick={() => {
+            prompt?.prompt();
+            setShow(false);
+          }}
+        >
+          追加
+        </button>
+        <button
+          onClick={() => setShow(false)}
+          style={{ fontSize: 11, color: 'var(--text3)', textAlign: 'center' }}
+        >
+          後で
+        </button>
       </div>
     </div>
   );
@@ -49,7 +97,9 @@ function AppLayout() {
     <div className="app-layout">
       <Navigation />
       <Sidebar />
-      <main className={`main-content${sidebarOpen ? '' : ' sidebar-collapsed'}`}>
+      <main
+        className={`main-content${sidebarOpen ? '' : ' sidebar-collapsed'}`}
+      >
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/search" element={<Search />} />

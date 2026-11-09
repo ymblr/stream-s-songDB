@@ -1,7 +1,13 @@
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { HomeIcon, SearchIcon, ListIcon, SettingsIcon, PlusIcon } from './Icons';
+import {
+  HomeIcon,
+  SearchIcon,
+  ListIcon,
+  SettingsIcon,
+  PlusIcon,
+} from './Icons';
 import AddSongModal from './AddSongModal';
 import PasswordModal from './PasswordModal';
 
@@ -16,17 +22,27 @@ export default function BottomNav() {
   };
 
   const linkStyle = (isActive) => ({
-    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-    gap: 3, flex: 1, padding: '6px 0',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    flex: 1,
+    padding: '6px 0',
     color: isActive ? 'var(--pink)' : 'var(--text3)',
-    textDecoration: 'none', fontSize: 10, fontWeight: isActive ? 600 : 400,
+    textDecoration: 'none',
+    fontSize: 10,
+    fontWeight: isActive ? 600 : 400,
     transition: 'color 0.15s',
     WebkitTapHighlightColor: 'transparent',
   });
 
   return (
     <>
-      <div className="bottom-nav" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0)' }}>
+      <div
+        className="bottom-nav"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0)' }}
+      >
         <NavLink to="/" end style={({ isActive }) => linkStyle(isActive)}>
           <HomeIcon size={20} /> ホーム
         </NavLink>
@@ -37,19 +53,33 @@ export default function BottomNav() {
         {/* Center add button */}
         <button
           onClick={handleAdd}
+          aria-label="楽曲を追加"
           style={{
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            flex: 1, padding: '4px 0', color: 'var(--text3)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flex: 1,
+            padding: '4px 0',
+            color: 'var(--text3)',
             WebkitTapHighlightColor: 'transparent',
           }}
         >
-          <div style={{
-            width: 40, height: 40, borderRadius: '50%', background: 'var(--pink)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#fff', marginBottom: 1,
-            boxShadow: 'var(--glow-pink)',
-            transform: 'translateY(-6px)',
-          }}>
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 'var(--radius)',
+              background: 'var(--pink)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#fff',
+              marginBottom: 1,
+              boxShadow: 'var(--glow-pink)',
+              transform: 'translateY(-6px)',
+            }}
+          >
             <PlusIcon size={18} />
           </div>
         </button>
@@ -62,7 +92,12 @@ export default function BottomNav() {
         </NavLink>
       </div>
 
-      {showPw && <PasswordModal onClose={() => setShowPw(false)} onSuccess={() => setShowAdd(true)} />}
+      {showPw && (
+        <PasswordModal
+          onClose={() => setShowPw(false)}
+          onSuccess={() => setShowAdd(true)}
+        />
+      )}
       {showAdd && <AddSongModal onClose={() => setShowAdd(false)} />}
     </>
   );

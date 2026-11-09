@@ -1,21 +1,47 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { doc, getDoc, getDocs, collection, query, where, updateDoc, deleteDoc } from 'firebase/firestore';
+import {
+  doc,
+  getDoc,
+  getDocs,
+  collection,
+  query,
+  where,
+  updateDoc,
+  deleteDoc,
+} from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { usePlayer } from '../contexts/PlayerContext';
 import {
-  DndContext, closestCenter,
-  KeyboardSensor, PointerSensor, useSensor, useSensors,
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
 } from '@dnd-kit/core';
 import {
-  SortableContext, verticalListSortingStrategy,
-  useSortable, arrayMove, sortableKeyboardCoordinates,
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+  sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { getThumbnailUrl, secondsToTimestamp } from '../utils/youtube';
 import MarqueeText from './../components/MarqueeText';
-import { PlayIcon, GripIcon, XIcon, EditIcon, TrashIcon, PlusIcon, MicIcon, MusicIcon, ShuffleIcon } from '../components/Icons';
+import {
+  PlayIcon,
+  GripIcon,
+  XIcon,
+  EditIcon,
+  TrashIcon,
+  PlusIcon,
+  MicIcon,
+  MusicIcon,
+  ShuffleIcon,
+} from '../components/Icons';
 import PasswordModal from '../components/PasswordModal';
 import PlaylistModal from '../components/PlaylistModal';
 import AddToPlaylistModal from '../components/AddToPlaylistModal';
@@ -23,9 +49,13 @@ import AddToPlaylistModal from '../components/AddToPlaylistModal';
 // SortableRow: drag handle is a separate element; clicks on other areas are play
 function SortableRow({ song, index, isActive, onPlay, onRemove, isAuthed }) {
   const {
-    attributes, listeners, setNodeRef,
-    transform, transition, isDragging,
-  } = useSortable({ id: song.id });
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: song.id, disabled: !isAuthed });
 
   return (
     <div
@@ -38,15 +68,20 @@ function SortableRow({ song, index, isActive, onPlay, onRemove, isAuthed }) {
         touchAction: 'manipulation', // allow touch scroll but also drag
       }}
     >
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '8px 12px', borderRadius: 8, marginBottom: 4,
-        background: isActive ? 'var(--pink-dim)' : 'var(--card)',
-        border: `1px solid ${isActive ? 'rgba(212,84,122,0.25)' : 'var(--border)'}`,
-        transition: isDragging ? 'none' : 'all 0.14s',
-        userSelect: 'none',
-      }}>
-
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '8px 12px',
+          borderRadius: 'var(--radius)',
+          marginBottom: 4,
+          background: isActive ? 'var(--pink-dim)' : 'var(--card)',
+          border: `1px solid ${isActive ? 'rgba(212,84,122,0.25)' : 'var(--border)'}`,
+          transition: isDragging ? 'none' : 'all 0.14s',
+          userSelect: 'none',
+        }}
+      >
         {/* ▶ Drag handle only — DnD listeners attached here */}
         {isAuthed && (
           <button
@@ -55,10 +90,13 @@ function SortableRow({ song, index, isActive, onPlay, onRemove, isAuthed }) {
             style={{
               cursor: isDragging ? 'grabbing' : 'grab',
               color: 'var(--text3)',
-              display: 'flex', alignItems: 'center',
+              display: 'flex',
+              alignItems: 'center',
               flexShrink: 0,
               padding: '4px 3px',
-              background: 'none', border: 'none', outline: 'none',
+              background: 'none',
+              border: 'none',
+              outline: 'none',
               touchAction: 'none', // required for pointer sensor
             }}
             title="ドラッグして並び替え"
@@ -68,38 +106,90 @@ function SortableRow({ song, index, isActive, onPlay, onRemove, isAuthed }) {
         )}
 
         {/* Index */}
-        <span style={{ width: 18, textAlign: 'center', fontSize: 11, color: isActive ? 'var(--pink)' : 'var(--text3)', flexShrink: 0 }}>
+        <span
+          style={{
+            width: 18,
+            textAlign: 'center',
+            fontSize: 11,
+            color: isActive ? 'var(--pink)' : 'var(--text3)',
+            flexShrink: 0,
+          }}
+        >
           {isActive ? <PlayIcon size={9} /> : index + 1}
         </span>
 
         {/* Thumbnail */}
         <img
-          src={getThumbnailUrl(song.videoId, 'mq')} alt=""
+          src={getThumbnailUrl(song.videoId, 'mq')}
+          alt=""
           onClick={() => onPlay(song, index)}
-          style={{ width: 52, height: 29, objectFit: 'cover', borderRadius: 4, flexShrink: 0, cursor: 'pointer' }}
+          style={{
+            width: 52,
+            height: 29,
+            objectFit: 'cover',
+            borderRadius: 4,
+            flexShrink: 0,
+            cursor: 'pointer',
+          }}
         />
 
         {/* Info */}
-        <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => onPlay(song, index)}>
+        <div
+          style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
+          onClick={() => onPlay(song, index)}
+        >
           <MarqueeText
             text={song.name}
             active={isActive}
-            style={{ fontSize: 13, fontWeight: isActive ? 600 : 400, color: isActive ? 'var(--pink)' : 'var(--text)' }}
+            style={{
+              fontSize: 13,
+              fontWeight: isActive ? 600 : 400,
+              color: isActive ? 'var(--pink)' : 'var(--text)',
+            }}
           />
-          <p style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', gap: 6 }}>
+          <p
+            style={{
+              fontSize: 11,
+              color: 'var(--text3)',
+              display: 'flex',
+              gap: 6,
+            }}
+          >
             <span>{song.artist}</span>
-            {(() => { const sec = (song.endTime||0)-(song.startTime||0); return sec > 0 ? <span style={{opacity:0.7}}>{secondsToTimestamp(sec)}</span> : null; })()}
+            {(() => {
+              const sec = (song.endTime || 0) - (song.startTime || 0);
+              return sec > 0 ? (
+                <span style={{ opacity: 0.7 }}>{secondsToTimestamp(sec)}</span>
+              ) : null;
+            })()}
           </p>
         </div>
 
         {/* Badge */}
-        <span className={song.streamType === 'singing' ? 'badge-singing' : 'badge-ukulele'} style={{ flexShrink: 0 }}>
-          {song.streamType === 'singing' ? <><MicIcon size={9} /> 歌</> : <><MusicIcon size={9} /> ウクレレ</>}
+        <span
+          className={
+            song.streamType === 'singing' ? 'badge-singing' : 'badge-ukulele'
+          }
+          style={{ flexShrink: 0 }}
+        >
+          {song.streamType === 'singing' ? (
+            <>
+              <MicIcon size={9} /> 歌
+            </>
+          ) : (
+            <>
+              <MusicIcon size={9} /> 弾き語り
+            </>
+          )}
         </span>
 
         {/* Remove */}
         {isAuthed && (
-          <button className="btn-icon-sq" onClick={() => onRemove(song.id)} style={{ flexShrink: 0 }}>
+          <button
+            className="btn-icon-sq"
+            onClick={() => onRemove(song.id)}
+            style={{ flexShrink: 0 }}
+          >
             <XIcon size={12} />
           </button>
         )}
@@ -112,7 +202,7 @@ export default function PlaylistDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { isAuthed } = useAuth();
-  const { playSong, loadSong, currentSong } = usePlayer();
+  const { playSong, currentSong } = usePlayer();
 
   const [playlist, setPlaylist] = useState(null);
   const [songs, setSongs] = useState([]);
@@ -136,47 +226,72 @@ export default function PlaylistDetail() {
   const fetchData = useCallback(async () => {
     try {
       const plDoc = await getDoc(doc(db, 'playlists', id));
-      if (!plDoc.exists()) { navigate('/playlists'); return; }
+      if (!plDoc.exists()) {
+        navigate('/playlists');
+        return;
+      }
       const pl = { id: plDoc.id, ...plDoc.data() };
       setPlaylist(pl);
       const ids = pl.songIds || [];
-      if (!ids.length) { setSongs([]); setLoading(false); return; }
+      if (!ids.length) {
+        setSongs([]);
+        setLoading(false);
+        return;
+      }
       // Handle > 30 ids in chunks
       const chunks = [];
-      for (let i = 0; i < ids.length; i += 30) chunks.push(ids.slice(i, i + 30));
+      for (let i = 0; i < ids.length; i += 30)
+        chunks.push(ids.slice(i, i + 30));
       const songMap = {};
       for (const chunk of chunks) {
-        const snap = await getDocs(query(collection(db, 'songs'), where('__name__', 'in', chunk)));
-        snap.docs.forEach(d => { songMap[d.id] = { id: d.id, ...d.data() }; });
+        const snap = await getDocs(
+          query(collection(db, 'songs'), where('__name__', 'in', chunk))
+        );
+        snap.docs.forEach((d) => {
+          songMap[d.id] = { id: d.id, ...d.data() };
+        });
       }
-      setSongs(ids.map(sid => songMap[sid]).filter(Boolean));
-    } catch (e) { console.error(e); }
+      setSongs(ids.map((sid) => songMap[sid]).filter(Boolean));
+    } catch (e) {
+      console.error(e);
+    }
     setLoading(false);
   }, [id, navigate]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const requireAuth = (action) => {
     if (isAuthed) action();
-    else { setPendingAction(() => action); setShowPassword(true); }
+    else {
+      setPendingAction(() => action);
+      setShowPassword(true);
+    }
   };
 
   const handleDragEnd = async ({ active, over }) => {
     if (!over || active.id === over.id) return;
-    const oldIdx = songs.findIndex(s => s.id === active.id);
-    const newIdx = songs.findIndex(s => s.id === over.id);
+    const oldIdx = songs.findIndex((s) => s.id === active.id);
+    const newIdx = songs.findIndex((s) => s.id === over.id);
     if (oldIdx === -1 || newIdx === -1) return;
     const reordered = arrayMove(songs, oldIdx, newIdx);
     setSongs(reordered);
     try {
-      await updateDoc(doc(db, 'playlists', id), { songIds: reordered.map(s => s.id) });
-    } catch (e) { console.error('Reorder failed:', e); }
+      await updateDoc(doc(db, 'playlists', id), {
+        songIds: reordered.map((s) => s.id),
+      });
+    } catch (e) {
+      console.error('Reorder failed:', e);
+    }
   };
 
   const handleRemove = async (songId) => {
-    const updated = songs.filter(s => s.id !== songId);
+    const updated = songs.filter((s) => s.id !== songId);
     setSongs(updated);
-    await updateDoc(doc(db, 'playlists', id), { songIds: updated.map(s => s.id) });
+    await updateDoc(doc(db, 'playlists', id), {
+      songIds: updated.map((s) => s.id),
+    });
   };
 
   const handleDelete = async () => {
@@ -185,11 +300,19 @@ export default function PlaylistDetail() {
     navigate('/playlists');
   };
 
-  if (loading) return (
-    <div style={{ padding: 40, textAlign: 'center', color: 'var(--text3)', animation: 'pulse 1.5s infinite' }}>
-      読み込み中...
-    </div>
-  );
+  if (loading)
+    return (
+      <div
+        style={{
+          padding: 40,
+          textAlign: 'center',
+          color: 'var(--text3)',
+          animation: 'pulse 1.5s infinite',
+        }}
+      >
+        読み込み中...
+      </div>
+    );
   if (!playlist) return null;
 
   const color = playlist.color || '#d4547a';
@@ -197,41 +320,147 @@ export default function PlaylistDetail() {
   return (
     <div style={{ maxWidth: 960, margin: '0 auto' }}>
       {/* Header */}
-      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-end', marginBottom: 24, paddingBottom: 20, borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: 20,
+          alignItems: 'flex-end',
+          marginBottom: 24,
+          paddingBottom: 20,
+          borderBottom: '1px solid var(--border)',
+          flexWrap: 'wrap',
+        }}
+      >
         {/* Cover */}
-        <div style={{ width: 110, height: 110, borderRadius: 16, flexShrink: 0, background: `linear-gradient(135deg, ${color} 0%, ${color}70 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 4px 20px ${color}30` }}>
+        <div
+          style={{
+            width: 110,
+            height: 110,
+            borderRadius: 'var(--radius)',
+            flexShrink: 0,
+            background: color,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
           <MusicIcon size={40} style={{ color: '#fff', opacity: 0.9 }} />
         </div>
 
         <div style={{ flex: 1, minWidth: 180 }}>
-          <p style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>プレイリスト</p>
-          <h1 style={{ fontFamily: 'var(--font-logo)', fontSize: 'clamp(18px, 3vw, 26px)', fontWeight: 700, letterSpacing: '-0.02em', marginBottom: 4, lineHeight: 1.1 }}>{playlist.name}</h1>
-          <p style={{ color: 'var(--text3)', fontSize: 13, marginBottom: 14 }}>{songs.length}曲</p>
+          <p
+            style={{
+              fontSize: 10,
+              color: 'var(--text3)',
+              fontWeight: 700,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              marginBottom: 4,
+            }}
+          >
+            プレイリスト
+          </p>
+          <h1
+            style={{
+              fontFamily: 'var(--font-logo)',
+              fontSize: 'clamp(18px, 3vw, 26px)',
+              fontWeight: 700,
+              letterSpacing: '-0.02em',
+              marginBottom: 4,
+              lineHeight: 1.1,
+            }}
+          >
+            {playlist.name}
+          </h1>
+          <p style={{ color: 'var(--text3)', fontSize: 13, marginBottom: 14 }}>
+            {songs.length}曲
+          </p>
 
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div
+            style={{
+              display: 'flex',
+              gap: 8,
+              flexWrap: 'wrap',
+              alignItems: 'center',
+            }}
+          >
             <button
               onClick={() => songs.length && playSong(songs[0], songs, 0)}
               disabled={!songs.length}
-              style={{ background: color, color: '#fff', borderRadius: 24, padding: '8px 22px', fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, opacity: songs.length ? 1 : 0.5, boxShadow: `0 3px 12px ${color}30` }}>
+              style={{
+                background: color,
+                color: '#fff',
+                borderRadius: 'var(--radius)',
+                padding: '8px 22px',
+                fontWeight: 600,
+                fontSize: 13,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                opacity: songs.length ? 1 : 0.5,
+                boxShadow: `0 3px 12px ${color}30`,
+              }}
+            >
               <PlayIcon size={13} /> 再生
             </button>
             <button
-              onClick={() => { if (songs.length) { const s = [...songs].sort(() => Math.random() - 0.5); playSong(s[0], s, 0); } }}
+              onClick={() => {
+                if (songs.length) {
+                  const s = [...songs].sort(() => Math.random() - 0.5);
+                  playSong(s[0], s, 0);
+                }
+              }}
               disabled={!songs.length}
               className="btn-secondary"
-              style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, padding: '8px 16px' }}>
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                fontSize: 13,
+                padding: '8px 16px',
+              }}
+            >
               <ShuffleIcon size={13} /> シャッフル
             </button>
             {isAuthed ? (
               <div style={{ display: 'flex', gap: 4 }}>
-                <button onClick={() => setShowAddSongs(true)} className="btn-secondary" style={{ fontSize: 12, padding: '7px 12px', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <button
+                  onClick={() => setShowAddSongs(true)}
+                  className="btn-secondary"
+                  style={{
+                    fontSize: 12,
+                    padding: '7px 12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                >
                   <PlusIcon size={12} /> 追加
                 </button>
-                <button onClick={() => setShowEdit(true)} className="btn-icon" title="編集"><EditIcon size={14} /></button>
-                <button onClick={handleDelete} className="btn-icon" title="削除" style={{ color: 'var(--text3)' }}><TrashIcon size={14} /></button>
+                <button
+                  onClick={() => setShowEdit(true)}
+                  className="btn-icon"
+                  title="編集"
+                >
+                  <EditIcon size={14} />
+                </button>
+                <button
+                  onClick={handleDelete}
+                  className="btn-icon"
+                  title="削除"
+                  style={{ color: 'var(--text3)' }}
+                >
+                  <TrashIcon size={14} />
+                </button>
               </div>
             ) : (
-              <button onClick={() => requireAuth(() => {})} className="btn-secondary" style={{ fontSize: 12, padding: '7px 12px' }}>編集</button>
+              <button
+                onClick={() => requireAuth(() => {})}
+                className="btn-secondary"
+                style={{ fontSize: 12, padding: '7px 12px' }}
+              >
+                編集
+              </button>
             )}
           </div>
         </div>
@@ -239,7 +468,13 @@ export default function PlaylistDetail() {
 
       {/* Song list */}
       {songs.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--text3)' }}>
+        <div
+          style={{
+            textAlign: 'center',
+            padding: '48px 20px',
+            color: 'var(--text3)',
+          }}
+        >
           <MusicIcon size={30} style={{ marginBottom: 10, opacity: 0.3 }} />
           <p>楽曲がありません</p>
         </div>
@@ -249,14 +484,17 @@ export default function PlaylistDetail() {
           collisionDetection={closestCenter}
           onDragEnd={isAuthed ? handleDragEnd : undefined}
         >
-          <SortableContext items={songs.map(s => s.id)} strategy={verticalListSortingStrategy}>
+          <SortableContext
+            items={songs.map((s) => s.id)}
+            strategy={verticalListSortingStrategy}
+          >
             {songs.map((song, i) => (
               <SortableRow
                 key={song.id}
                 song={song}
                 index={i}
                 isActive={currentSong?.id === song.id}
-                onPlay={(s, idx) => loadSong(s, songs, idx)}
+                onPlay={(s, idx) => playSong(s, songs, idx)}
                 onRemove={() => requireAuth(() => handleRemove(song.id))}
                 isAuthed={isAuthed}
               />
@@ -268,22 +506,31 @@ export default function PlaylistDetail() {
       {showPassword && (
         <PasswordModal
           onClose={() => setShowPassword(false)}
-          onSuccess={() => { pendingAction?.(); setPendingAction(null); }}
+          onSuccess={() => {
+            pendingAction?.();
+            setPendingAction(null);
+          }}
         />
       )}
       {showEdit && (
         <PlaylistModal
           playlist={playlist}
           onClose={() => setShowEdit(false)}
-          onSave={() => { fetchData(); setShowEdit(false); }}
+          onSave={() => {
+            fetchData();
+            setShowEdit(false);
+          }}
         />
       )}
       {showAddSongs && (
         <AddToPlaylistModal
           playlist={playlist}
-          currentSongIds={songs.map(s => s.id)}
+          currentSongIds={songs.map((s) => s.id)}
           onClose={() => setShowAddSongs(false)}
-          onSave={() => { fetchData(); setShowAddSongs(false); }}
+          onSave={() => {
+            fetchData();
+            setShowAddSongs(false);
+          }}
         />
       )}
     </div>

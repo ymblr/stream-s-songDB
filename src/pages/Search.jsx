@@ -1,114 +1,157 @@
-import React, { useEffect, useState } from 'react';
-import { collection, getDocs, orderBy, query } from 'firebase/firestore';
-import { db } from '../firebase';
+import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { useSongCatalog } from '../hooks/useSongCatalog';
 import { searchSongs } from '../utils/search';
 import SongCard from '../components/SongCard';
-import { useSearchParams } from 'react-router-dom';
-import { SearchIcon, GridIcon, ListIcon, MicIcon, MusicIcon, XIcon } from '../components/Icons';
-
-// AND search: all space-separated terms must match
-function andSearch(songs, rawQuery, typeFilter) {
-  let results = typeFilter ? songs.filter(s => s.streamType === typeFilter) : songs;
-  if (!rawQuery.trim()) return results;
-
-  const terms = rawQuery.trim().split(/\s+/).filter(Boolean);
-  return results.filter(song => {
-    return terms.every(term => {
-      const filtered = searchSongs([song], term, null);
-      return filtered.length > 0;
-    });
-  });
-}
+import { SearchIcon, GridIcon, ListIcon, XIcon } from '../components/Icons';
 
 export default function Search() {
-  const [allSongs, setAllSongs] = useState([]);
-  const [results, setResults] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [q, setQ] = useState(searchParams.get('q') || '');
-  const [typeFilter, setTypeFilter] = useState(searchParams.get('type') || '');
-  const [view, setView] = useState('grid');
-
+  const { songs, loading, error, refresh } = useSongCatalog();
+  const [params, setParams] = useSearchParams();
+  const q = params.get('q') || '';
+  const type = params.get('type') || '';
+  const deferred = useDeferredValue(q);
+  const [view, setView] = useState(
+    () => localStorage.getItem('uta_search_view') || 'list'
+  );
+  const [visible, setVisible] = useState(48);
+  const results = useMemo(
+    () => searchSongs(songs, deferred, type || null),
+    [songs, deferred, type]
+  );
   useEffect(() => {
-    getDocs(query(collection(db, 'songs'), orderBy('createdAt', 'desc')))
-      .then(snap => { setAllSongs(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    setResults(andSearch(allSongs, q, typeFilter));
-    const params = {};
-    if (q) params.q = q;
-    if (typeFilter) params.type = typeFilter;
-    setSearchParams(params, { replace: true });
-  }, [q, typeFilter, allSongs]);
-
+    setVisible(48);
+  }, [deferred, type]);
+  const change = (key, value) => {
+    const next = new URLSearchParams(params);
+    if (value) next.set(key, value);
+    else next.delete(key);
+    setParams(next, { replace: true });
+  };
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-      <div style={{ marginBottom: 20 }}>
-        <h1 style={{ fontFamily: 'var(--font-logo)', fontWeight: 700, fontSize: 18, letterSpacing: '-0.02em', marginBottom: 14 }}>楽曲を探す</h1>
-
-        {/* Search bar */}
-        <div style={{ position: 'relative', marginBottom: 12 }}>
-          <SearchIcon size={15} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+    <div className="page search-page">
+      <header className="page-heading">
+        <div>
+          <p className="eyebrow">THE COLLECTION</p>
+          <h1>楽曲を探す</h1>
+          <p>曲名・アーティスト・タグから、聴きたい一曲へ。</p>
+        </div>
+        <span className="collection-total">
+          {songs.length}
+          <small>TRACKS</small>
+        </span>
+      </header>
+      <div className="catalog-toolbar">
+        <div className="catalog-search">
+          <SearchIcon size={19} />
           <input
-            placeholder="楽曲名・アーティスト（スペースでAND検索）"
-            value={q} onChange={e => setQ(e.target.value)}
-            style={{ paddingLeft: 40, height: 44, fontSize: 14 }}
-            autoFocus
+            aria-label="楽曲を検索"
+            placeholder="曲名、アーティスト、タグで検索"
+            value={q}
+            onChange={(e) => change('q', e.target.value)}
           />
           {q && (
-            <button onClick={() => setQ('')} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)' }}>
-              <XIcon size={15} />
+            <button
+              className="btn-icon-sq"
+              aria-label="検索をクリア"
+              onClick={() => change('q', '')}
+            >
+              <XIcon size={16} />
             </button>
           )}
         </div>
-        {q.includes(' ') && (
-          <p style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 10 }}>
-            AND検索: 「{q.trim().split(/\s+/).join('」「')}」すべてを含む楽曲
-          </p>
-        )}
-
-        {/* Filters */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>絞り込み</span>
-          {[['singing','歌枠',MicIcon],['ukulele','ウクレレ枠',MusicIcon]].map(([val, label, Ic]) => (
-            <button key={val} onClick={() => setTypeFilter(typeFilter === val ? '' : val)}
-              style={{ padding: '5px 12px', borderRadius: 20, border: `1px solid ${typeFilter === val ? 'var(--pink)' : 'var(--border)'}`, background: typeFilter === val ? 'var(--pink-dim)' : 'transparent', color: typeFilter === val ? 'var(--pink)' : 'var(--text2)', fontSize: 12, fontWeight: typeFilter === val ? 600 : 400, display: 'flex', alignItems: 'center', gap: 4, transition: 'all 0.14s' }}>
-              <Ic size={11} /> {label}
-            </button>
-          ))}
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 2, background: 'var(--card2)', borderRadius: 7, padding: 3 }}>
-            {[['grid', GridIcon], ['list', ListIcon]].map(([v, Ic]) => (
-              <button key={v} onClick={() => setView(v)}
-                style={{ width: 28, height: 26, borderRadius: 5, background: view === v ? 'var(--card)' : 'transparent', color: view === v ? 'var(--text)' : 'var(--text3)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.14s' }}>
-                <Ic size={13} />
+        <div className="catalog-filters">
+          <div className="segmented-control">
+            {[
+              ['', 'すべて'],
+              ['singing', '歌枠'],
+              ['ukulele', '弾き語り'],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                className={type === value ? 'selected' : ''}
+                aria-pressed={type === value}
+                onClick={() => change('type', value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <span className="results-count">
+            {loading ? '読み込み中…' : `${results.length}曲`}
+          </span>
+          <div className="view-switch">
+            {[
+              ['list', ListIcon, 'リスト表示'],
+              ['grid', GridIcon, 'グリッド表示'],
+            ].map(([value, Icon, label]) => (
+              <button
+                key={value}
+                className={`btn-icon-sq ${view === value ? 'selected' : ''}`}
+                aria-label={label}
+                aria-pressed={view === value}
+                onClick={() => {
+                  setView(value);
+                  localStorage.setItem('uta_search_view', value);
+                }}
+              >
+                <Icon size={16} />
               </button>
             ))}
           </div>
         </div>
+        <p className="field-hint">
+          スペースで区切ると、すべてのキーワードを含む曲を検索します。
+        </p>
       </div>
-
-      {!loading && <p style={{ color: 'var(--text3)', fontSize: 11, marginBottom: 16 }}>{q || typeFilter ? `${results.length}件` : `全${results.length}曲`}</p>}
-
-      {loading ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
-          {[...Array(8)].map((_, i) => <div key={i} style={{ background: 'var(--card)', borderRadius: 'var(--radius)', aspectRatio: '1.2', animation: 'pulse 1.5s infinite' }} />)}
+      {error ? (
+        <div className="form-error" role="alert">
+          {error}{' '}
+          <button className="text-link" onClick={refresh}>
+            再試行
+          </button>
         </div>
-      ) : results.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text3)' }}>
-          <SearchIcon size={32} style={{ marginBottom: 12, opacity: 0.3 }} />
-          <p style={{ fontSize: 14 }}>見つかりませんでした</p>
-          <p style={{ fontSize: 12, marginTop: 6 }}>スペースで区切るとAND検索ができます</p>
-        </div>
-      ) : view === 'grid' ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
-          {results.map((song, i) => <SongCard key={song.id} song={song} playlist={results} index={i} />)}
+      ) : loading && !songs.length ? (
+        <p className="empty-note">ライブラリを読み込み中…</p>
+      ) : !results.length ? (
+        <div className="empty-state">
+          <SearchIcon size={30} />
+          <h2>楽曲が見つかりませんでした</h2>
+          <p>キーワードや配信種別を変えてみてください。</p>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          {results.map((song, i) => <SongCard key={song.id} song={song} playlist={results} index={i} compact />)}
-        </div>
+        <>
+          {view === 'list' && (
+            <div className="song-list-heading">
+              <span>楽曲 / アーティスト</span>
+              <span>時間</span>
+              <span>種別</span>
+              <span>操作</span>
+            </div>
+          )}
+          <div
+            className={view === 'list' ? 'song-list' : 'song-grid'}
+            aria-busy={deferred !== q}
+          >
+            {results.slice(0, visible).map((song, index) => (
+              <SongCard
+                key={song.id}
+                song={song}
+                playlist={results}
+                index={index}
+                compact={view === 'list'}
+              />
+            ))}
+          </div>
+          {results.length > visible && (
+            <button
+              className="btn-secondary load-more"
+              onClick={() => setVisible((n) => n + 48)}
+            >
+              さらに表示（残り{results.length - visible}曲）
+            </button>
+          )}
+        </>
       )}
     </div>
   );

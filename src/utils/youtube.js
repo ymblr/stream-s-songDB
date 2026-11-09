@@ -1,15 +1,30 @@
 // YouTubeのURLからビデオIDを取得
 export function extractVideoId(url) {
   if (!url) return null;
-  const patterns = [
-    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&?/\s]{11})/,
-    /youtube\.com\/live\/([^&?/\s]{11})/,
-  ];
-  for (const pattern of patterns) {
-    const match = url.match(pattern);
-    if (match) return match[1];
+  try {
+    const parsed = new URL(url.trim());
+    if (!['https:', 'http:'].includes(parsed.protocol)) return null;
+    const host = parsed.hostname.toLowerCase();
+    let id = null;
+    if (host === 'youtu.be') id = parsed.pathname.split('/')[1];
+    if (
+      [
+        'youtube.com',
+        'www.youtube.com',
+        'm.youtube.com',
+        'music.youtube.com',
+        'www.youtube-nocookie.com',
+      ].includes(host)
+    ) {
+      id =
+        parsed.pathname === '/watch'
+          ? parsed.searchParams.get('v')
+          : /^\/(?:live|embed|shorts)\/([^/]+)/.exec(parsed.pathname)?.[1];
+    }
+    return /^[\w-]{11}$/.test(id || '') ? id : null;
+  } catch {
+    return null;
   }
-  return null;
 }
 
 // タイムスタンプ文字列（MM:SS または HH:MM:SS）を秒数に変換
@@ -27,7 +42,8 @@ export function secondsToTimestamp(seconds) {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  if (h > 0)
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
@@ -48,7 +64,7 @@ export function getThumbnailUrl(videoId, quality = 'hq') {
 export async function fetchVideoInfo(videoId) {
   try {
     const url = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) throw new Error('Failed to fetch');
     const data = await res.json();
     return {
@@ -66,9 +82,17 @@ export async function fetchVideoInfo(videoId) {
 }
 
 // YouTubeのIFrame APIを読み込む
+let youtubeAPIPromise;
 export function loadYouTubeAPI() {
-  return new Promise((resolve) => {
+  if (window.YT?.Player) return Promise.resolve(window.YT);
+  if (youtubeAPIPromise) return youtubeAPIPromise;
+  youtubeAPIPromise = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      youtubeAPIPromise = null;
+      reject(new Error('YouTube APIの読み込みに失敗しました'));
+    }, 15000);
     if (window.YT && window.YT.Player) {
+      clearTimeout(timer);
       resolve(window.YT);
       return;
     }
@@ -77,12 +101,20 @@ export function loadYouTubeAPI() {
       const script = document.createElement('script');
       script.id = 'yt-api-script';
       script.src = 'https://www.youtube.com/iframe_api';
+      script.onerror = () => {
+        clearTimeout(timer);
+        script.remove();
+        youtubeAPIPromise = null;
+        reject(new Error('YouTube APIの読み込みに失敗しました'));
+      };
       document.head.appendChild(script);
     }
     const prev = window.onYouTubeIframeAPIReady;
     window.onYouTubeIframeAPIReady = () => {
+      clearTimeout(timer);
       if (prev) prev();
       resolve(window.YT);
     };
   });
+  return youtubeAPIPromise;
 }

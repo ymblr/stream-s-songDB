@@ -1,98 +1,89 @@
-// ─────────────────────────────────────────────────────────────
-//  Stream's SongDB — Service Worker
-//
-//  キャッシュ戦略:
-//    HTML (navigate)  → ネットワーク優先  ★常に最新の index.html を取得
-//    JS / CSS / 画像  → キャッシュ優先    Vite がビルドごとにハッシュを
-//                                          ファイル名に付けるため自動更新
-//
-//  CACHE_NAME は変えなくて OK。
-//  新ビルド = 新ハッシュ付きファイル名 = 自動的に新しいURLとして取得される。
-// ─────────────────────────────────────────────────────────────
+const CACHE_NAME = 'songdb-cache-v2';
+const BASE = new URL('./', self.location).pathname;
+const MAX_ENTRIES = 120;
 
-const CACHE_NAME = 'songdb-cache-v1';
-
-// ── Install ──────────────────────────────────────────────────
-self.addEventListener('install', e => {
-  // 即座に新しい SW を有効化（待機なし）
+self.addEventListener('install', (event) => {
   self.skipWaiting();
-  e.waitUntil(
-    caches.open(CACHE_NAME).then(cache =>
-      // オフライン時のフォールバック用に index.html だけ入れておく
-      cache.add('/stream-s-songDB/').catch(() => {})
-    )
+  event.waitUntil(
+    caches
+      .open(CACHE_NAME)
+      .then((cache) => cache.add(BASE))
+      .catch(() => {})
   );
 });
 
-// ── Activate ─────────────────────────────────────────────────
-self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(
-        keys
-          .filter(k => k !== CACHE_NAME)   // 古いキャッシュを全て削除
-          .map(k => caches.delete(k))
-      ))
-      .then(() => self.clients.claim())   // 開いているページを即時コントロール
+self.addEventListener('activate', (event) => {
+  // GitHub Pages shares an origin with other repositories: only remove our caches.
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(
+          keys
+            .filter(
+              (key) => key.startsWith('songdb-cache-') && key !== CACHE_NAME
+            )
+            .map((key) => caches.delete(key))
+        )
+      )
+      .then(() => self.clients.claim())
   );
 });
 
-// ── Fetch ────────────────────────────────────────────────────
-self.addEventListener('fetch', e => {
-  const { request } = e;
+async function remember(request, response) {
+  if (!response.ok || response.type === 'opaque') return;
+  const cache = await caches.open(CACHE_NAME);
+  await cache.put(request, response);
+  const keys = await cache.keys();
+  await Promise.all(
+    keys
+      .slice(0, Math.max(0, keys.length - MAX_ENTRIES))
+      .filter((key) => new URL(key.url).pathname !== BASE)
+      .map((key) => cache.delete(key))
+  );
+}
+
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
   const url = new URL(request.url);
-
-  // Firebase / YouTube / googleapis は SW でインターセプトしない
   if (
-    url.hostname.includes('firebase') ||
-    url.hostname.includes('firestore') ||
-    url.hostname.includes('youtube') ||
-    url.hostname.includes('googleapis') ||
-    url.hostname.includes('ytimg')
-  ) return;
-
-  // ── ナビゲーション (HTML) → ネットワーク優先 ──────────────
-  // デプロイ後すぐに新しい index.html が読み込まれる。
-  // オフラインのときだけキャッシュから返す。
-  if (request.mode === 'navigate') {
-    e.respondWith(
+    request.method !== 'GET' ||
+    url.origin !== self.location.origin ||
+    !url.pathname.startsWith(BASE)
+  )
+    return;
+  const hashedAsset = /\/assets\/.*-[\w-]+\.(?:js|css)$/.test(url.pathname);
+  if (hashedAsset) {
+    event.respondWith(
+      caches.match(request).then(
+        (cached) =>
+          cached ||
+          fetch(request).then((response) => {
+            event.waitUntil(remember(request, response.clone()));
+            return response;
+          })
+      )
+    );
+  } else {
+    // HTML and unhashed public files (manifest/icons) must receive new deployments.
+    event.respondWith(
       fetch(request)
-        .then(res => {
-          if (res.ok) {
-            // 取得できたら次回オフライン用にキャッシュを更新
-            caches.open(CACHE_NAME)
-              .then(cache => cache.put(request, res.clone()));
-          }
-          return res;
+        .then((response) => {
+          event.waitUntil(remember(request, response.clone()));
+          return response;
         })
-        .catch(() =>
-          // ネットワーク不可 → キャッシュから返す
-          caches.match(request).then(cached =>
-            cached || caches.match('/stream-s-songDB/')
-          )
+        .catch(
+          async () =>
+            (await caches.match(request)) ||
+            (request.mode === 'navigate'
+              ? await caches.match(BASE)
+              : undefined) ||
+            Response.error()
         )
     );
-    return;
   }
-
-  // ── 静的アセット (JS / CSS / 画像) → キャッシュ優先 ───────
-  // Vite がビルド時にファイル名へハッシュを付加するため、
-  // 新ビルド = 新URL → 自動的にキャッシュミスして最新ファイルを取得する。
-  e.respondWith(
-    caches.match(request).then(cached => {
-      if (cached) return cached;
-      return fetch(request).then(res => {
-        if (res.ok && res.type !== 'opaque') {
-          caches.open(CACHE_NAME)
-            .then(cache => cache.put(request, res.clone()));
-        }
-        return res;
-      });
-    })
-  );
 });
 
-// ── Message ──────────────────────────────────────────────────
-self.addEventListener('message', e => {
-  if (e.data?.type === 'SKIP_WAITING') self.skipWaiting();
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });

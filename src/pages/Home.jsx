@@ -1,189 +1,163 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { collection, query, orderBy, limit, getDocs, where, getCountFromServer } from 'firebase/firestore';
-import { db } from '../firebase';
+import React, { useMemo } from 'react';
+import { Link } from 'react-router-dom';
+import { useSongCatalog } from '../hooks/useSongCatalog';
+import { usePlayer } from '../contexts/PlayerContext';
 import SongCard from '../components/SongCard';
-import { useNavigate } from 'react-router-dom';
-import { MicIcon, MusicIcon, StarIcon, SparkleIcon } from '../components/Icons';
+import { MicIcon, MusicIcon } from '../components/Icons';
 
-// Fisher-Yates shuffle — returns new shuffled array
-function shuffle(arr) {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
-// Recommend songs:
-// - Mix of both types
-// - Not already in popular list
-// - Pick some mid-playcount + some new ones
-function pickRecommended(allSongs, popularIds, count = 6) {
-  const pool = allSongs.filter(s => !popularIds.has(s.id));
-  if (!pool.length) return [];
-  // Score: balance between playCount and recency
-  const now = Date.now() / 1000;
-  const scored = pool.map(s => {
-    const age = now - (s.createdAt?.seconds || now); // seconds old
-    const play = s.playCount || 0;
-    // Recency bonus decays over 30 days
-    const recency = Math.max(0, 1 - age / (86400 * 30));
-    // Combined score: some popularity + some freshness + randomness
-    return { song: s, score: play * 0.4 + recency * 40 + Math.random() * 20 };
-  });
-  scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, count).map(s => s.song);
-}
-
-export default function Home() {
-  const [popular, setPopular] = useState([]);
-  const [recommended, setRecommended] = useState([]);
-  const [recent, setRecent] = useState([]);
-  const [singSongs, setSingSongs] = useState([]);
-  const [ukuSongs, setUkuSongs] = useState([]);
-  const [singCount, setSingCount] = useState(0);
-  const [ukuCount, setUkuCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    const fetch = async () => {
-      try {
-        // Fetch more songs for random selection
-        const [popSnap, recentSnap, singSnap, ukuSnap, scSnap, ucSnap] = await Promise.all([
-          getDocs(query(collection(db, 'songs'), orderBy('playCount', 'desc'), limit(6))),
-          getDocs(query(collection(db, 'songs'), orderBy('createdAt', 'desc'), limit(6))),
-          // Fetch more than needed so we can shuffle
-          getDocs(query(collection(db, 'songs'), where('streamType', '==', 'singing'), orderBy('createdAt', 'desc'), limit(30))),
-          getDocs(query(collection(db, 'songs'), where('streamType', '==', 'ukulele'), orderBy('createdAt', 'desc'), limit(30))),
-          getCountFromServer(query(collection(db, 'songs'), where('streamType', '==', 'singing'))),
-          getCountFromServer(query(collection(db, 'songs'), where('streamType', '==', 'ukulele'))),
-        ]);
-
-        const toSong = d => ({ id: d.id, ...d.data() });
-        const popSongs = popSnap.docs.map(toSong).filter(s => (s.playCount || 0) > 0);
-        const popularIds = new Set(popSongs.map(s => s.id));
-        const allSingSongs = singSnap.docs.map(toSong);
-        const allUkuSongs = ukuSnap.docs.map(toSong);
-        const allSongs = [...allSingSongs, ...allUkuSongs];
-
-        setPopular(popSongs);
-        setRecent(recentSnap.docs.map(toSong));
-        // ✅ Random order — show 6 from shuffled pool
-        setSingSongs(shuffle(allSingSongs).slice(0, 6));
-        setUkuSongs(shuffle(allUkuSongs).slice(0, 6));
-        setSingCount(scSnap.data().count);
-        setUkuCount(ucSnap.data().count);
-        // Recommended
-        setRecommended(pickRecommended(allSongs, popularIds, 6));
-      } catch (e) { console.error(e); }
-      setLoading(false);
-    };
-    fetch();
-  }, []);
-
-  const Section = ({ title, icon, songs, type, badge, emptyMsg }) => (
-    <section style={{ marginBottom: 40 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {icon}
-          <h2 style={{ fontFamily: 'var(--font-logo)', fontWeight: 700, fontSize: 16, letterSpacing: '-0.02em' }}>{title}</h2>
-          {badge}
+function Section({ number, title, subtitle, songs, compact = false, to }) {
+  return (
+    <section className="library-section">
+      <div className="library-section-heading">
+        <div>
+          <p className="eyebrow">
+            {number} / {subtitle}
+          </p>
+          <h2>{title}</h2>
         </div>
-        {type !== undefined && (
-          <button
-            onClick={() => navigate(`/search?type=${type || ''}`)}
-            style={{ fontSize: 12, color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', transition: 'color 0.15s' }}
-            onMouseEnter={e => e.target.style.color = 'var(--pink)'}
-            onMouseLeave={e => e.target.style.color = 'var(--text3)'}
-          >
-            すべて表示 →
-          </button>
+        {to && (
+          <Link to={to}>
+            すべて見る <span>↗</span>
+          </Link>
         )}
       </div>
-      {loading ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12 }}>
-          {[...Array(4)].map((_, i) => (
-            <div key={i} style={{ background: 'var(--card)', borderRadius: 'var(--radius)', aspectRatio: '1.2', animation: 'pulse 1.5s infinite' }} />
+      {songs.length ? (
+        <div className={compact ? 'song-list' : 'song-grid'}>
+          {songs.map((song, index) => (
+            <SongCard
+              key={song.id}
+              song={song}
+              index={index}
+              compact={compact}
+            />
           ))}
         </div>
-      ) : songs.length === 0 ? (
-        <p style={{ color: 'var(--text3)', fontSize: 13 }}>{emptyMsg || 'まだ楽曲がありません'}</p>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12 }}>
-          {songs.map((song, i) => (
-            <SongCard key={song.id} song={song} playlist={[song]} index={0} />
-          ))}
-        </div>
+        <p className="empty-note">楽曲を追加すると、ここに表示されます。</p>
       )}
     </section>
   );
+}
 
+export default function Home() {
+  const { songs, loading, error, refresh } = useSongCatalog();
+  const { history } = usePlayer();
+  const popular = useMemo(
+    () =>
+      [...songs]
+        .filter((s) => s.playCount > 0)
+        .sort((a, b) => b.playCount - a.playCount)
+        .slice(0, 5),
+    [songs]
+  );
+  const recommended = useMemo(() => {
+    const pool = songs.filter((s) => !popular.some((p) => p.id === s.id));
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    return pool.slice(0, 5);
+  }, [songs, popular]);
+  const singing = songs.filter((s) => s.streamType === 'singing');
+  const acoustic = songs.filter((s) => s.streamType === 'ukulele');
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-      {/* Hero */}
-      <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontFamily: 'var(--font-logo)', fontSize: 'clamp(22px, 3.5vw, 36px)', fontWeight: 700, letterSpacing: '-0.03em', marginBottom: 6, lineHeight: 1.1 }}>
-          Stream's <span style={{ color: 'var(--pink)' }}>Song DB</span>
-        </h1>
-        <p style={{ color: 'var(--text3)', fontSize: 13 }}>歌枠・ウクレレ配信から切り出した楽曲をいつでもどこでも</p>
-      </div>
-
-      {/* Stats */}
-      {!loading && (
-        <div style={{ display: 'flex', gap: 10, marginBottom: 36, flexWrap: 'wrap' }}>
-          {[
-            { label: '歌枠', count: singCount, color: 'var(--pink)', bg: 'var(--pink-dim)', Icon: MicIcon, type: 'singing' },
-            { label: 'ウクレレ枠', count: ukuCount, color: 'var(--badge-uku-color)', bg: 'var(--badge-uku-bg)', Icon: MusicIcon, type: 'ukulele' },
-          ].map(({ label, count, color, bg, Icon, type }) => (
-            <button key={label} onClick={() => navigate(`/search?type=${type}`)}
-              style={{ background: bg, border: `1px solid ${color}28`, borderRadius: 12, padding: '14px 20px', minWidth: 120, textAlign: 'left', cursor: 'pointer', transition: 'transform 0.15s' }}
-              onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
-              onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, color }}>
-                <Icon size={13} /><span style={{ fontSize: 11, fontWeight: 600 }}>{label}</span>
-              </div>
-              <p className="stat-num" style={{ color }}>{count}</p>
-              <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>曲</p>
-            </button>
+    <div className="page library-home">
+      <header className="library-hero">
+        <div>
+          <p className="eyebrow">STREAM'S SONG DB / PERSONAL ARCHIVE</p>
+          <h1>
+            好きな一曲を、
+            <br />
+            いつもの場所で。
+          </h1>
+          <p className="hero-description">
+            歌枠と弾き語り。配信で出会った音楽を、あなたのライブラリに。
+          </p>
+          <Link className="text-link" to="/search">
+            ライブラリを探す <span>↗</span>
+          </Link>
+        </div>
+        <div className="archive-count">
+          <span className="eyebrow">IN THE LIBRARY</span>
+          <strong>
+            {loading ? '—' : String(songs.length).padStart(3, '0')}
+          </strong>
+          <span>TRACKS & COUNTING</span>
+          <div>
+            <Link to="/search?type=singing">
+              <MicIcon size={14} />
+              歌枠 <b>{singing.length}</b>
+            </Link>
+            <Link to="/search?type=ukulele">
+              <MusicIcon size={14} />
+              弾き語り <b>{acoustic.length}</b>
+            </Link>
+          </div>
+        </div>
+      </header>
+      {error ? (
+        <div className="form-error" role="alert">
+          {error}{' '}
+          <button className="text-link" onClick={refresh}>
+            再試行
+          </button>
+        </div>
+      ) : loading && !songs.length ? (
+        <div className="skeleton-grid" aria-label="楽曲を読み込み中">
+          {[0, 1, 2, 3, 4].map((n) => (
+            <div key={n} />
           ))}
         </div>
+      ) : (
+        <>
+          {history.length > 0 && (
+            <Section
+              number="00"
+              title="最近聴いた曲"
+              subtitle="RECENTLY PLAYED"
+              songs={history.slice(0, 4).map((h) => h.song)}
+              compact
+            />
+          )}
+          <Section
+            number="01"
+            title="ライブラリの新着"
+            subtitle="RECENTLY ADDED"
+            songs={songs.slice(0, 5)}
+            to="/search"
+          />
+          <div className="library-columns">
+            <Section
+              number="02"
+              title="よく聴く曲"
+              subtitle="ON REPEAT"
+              songs={popular}
+              compact
+            />
+            <Section
+              number="03"
+              title="今日はこの曲から"
+              subtitle="PICK SOMETHING"
+              songs={recommended}
+              compact
+            />
+          </div>
+          <Section
+            number="04"
+            title="歌枠"
+            subtitle="SINGING"
+            songs={singing.slice(0, 5)}
+            to="/search?type=singing"
+          />
+          <Section
+            number="05"
+            title="弾き語り"
+            subtitle="ACOUSTIC"
+            songs={acoustic.slice(0, 5)}
+            to="/search?type=ukulele"
+          />
+        </>
       )}
-
-      {popular.length > 0 && (
-        <Section
-          title="人気の楽曲"
-          icon={<StarIcon size={16} style={{ color: '#f59e0b' }} />}
-          songs={popular}
-          badge={<span style={{ fontSize: 10, color: 'var(--text3)', background: 'var(--card2)', border: '1px solid var(--border)', borderRadius: 10, padding: '2px 7px' }}>再生数順</span>}
-        />
-      )}
-
-      {recommended.length > 0 && (
-        <Section
-          title="おすすめ"
-          icon={<SparkleIcon size={16} style={{ color: '#8b5cf6' }} />}
-          songs={recommended}
-          badge={<span style={{ fontSize: 10, color: 'var(--text3)', background: 'var(--card2)', border: '1px solid var(--border)', borderRadius: 10, padding: '2px 7px' }}>今日のピック</span>}
-          emptyMsg="楽曲が増えるとおすすめが表示されます"
-        />
-      )}
-
-      <Section title="最近追加された楽曲" songs={recent} type="" />
-
-      <Section
-        title="歌枠"
-        songs={singSongs}
-        type="singing"
-        badge={<span className="badge-singing"><MicIcon size={10} />歌枠</span>}
-      />
-      <Section
-        title="ウクレレ枠"
-        songs={ukuSongs}
-        type="ukulele"
-        badge={<span className="badge-ukulele"><MusicIcon size={10} />ウクレレ枠</span>}
-      />
     </div>
   );
 }

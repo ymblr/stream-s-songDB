@@ -1,40 +1,134 @@
 // ローマ字→ひらがな変換テーブル（長い順に処理）
 const ROMAJI_TABLE = [
   // 4文字以上
-  ['tchi', 'っち'], ['ttsu', 'っつ'], ['kkya', 'っきゃ'], ['sshu', 'っしゅ'],
+  ['tchi', 'っち'],
+  ['ttsu', 'っつ'],
+  ['kkya', 'っきゃ'],
+  ['sshu', 'っしゅ'],
   // 3文字（特殊）
-  ['sha', 'しゃ'], ['shi', 'し'], ['shu', 'しゅ'], ['she', 'しぇ'], ['sho', 'しょ'],
-  ['chi', 'ち'], ['tsu', 'つ'],
-  ['cha', 'ちゃ'], ['chu', 'ちゅ'], ['che', 'ちぇ'], ['cho', 'ちょ'],
-  ['dzu', 'づ'], ['dzi', 'ぢ'],
-  ['jya', 'じゃ'], ['jyu', 'じゅ'], ['jyo', 'じょ'],
-  ['nya', 'にゃ'], ['nyu', 'にゅ'], ['nyo', 'にょ'],
-  ['mya', 'みゃ'], ['myu', 'みゅ'], ['myo', 'みょ'],
-  ['rya', 'りゃ'], ['ryu', 'りゅ'], ['ryo', 'りょ'],
-  ['hya', 'ひゃ'], ['hyu', 'ひゅ'], ['hyo', 'ひょ'],
-  ['bya', 'びゃ'], ['byu', 'びゅ'], ['byo', 'びょ'],
-  ['pya', 'ぴゃ'], ['pyu', 'ぴゅ'], ['pyo', 'ぴょ'],
-  ['gya', 'ぎゃ'], ['gyu', 'ぎゅ'], ['gyo', 'ぎょ'],
-  ['kya', 'きゃ'], ['kyu', 'きゅ'], ['kyo', 'きょ'],
-  ['tya', 'ちゃ'], ['tyu', 'ちゅ'], ['tyo', 'ちょ'],
+  ['sha', 'しゃ'],
+  ['shi', 'し'],
+  ['shu', 'しゅ'],
+  ['she', 'しぇ'],
+  ['sho', 'しょ'],
+  ['chi', 'ち'],
+  ['tsu', 'つ'],
+  ['cha', 'ちゃ'],
+  ['chu', 'ちゅ'],
+  ['che', 'ちぇ'],
+  ['cho', 'ちょ'],
+  ['dzu', 'づ'],
+  ['dzi', 'ぢ'],
+  ['jya', 'じゃ'],
+  ['jyu', 'じゅ'],
+  ['jyo', 'じょ'],
+  ['nya', 'にゃ'],
+  ['nyu', 'にゅ'],
+  ['nyo', 'にょ'],
+  ['mya', 'みゃ'],
+  ['myu', 'みゅ'],
+  ['myo', 'みょ'],
+  ['rya', 'りゃ'],
+  ['ryu', 'りゅ'],
+  ['ryo', 'りょ'],
+  ['hya', 'ひゃ'],
+  ['hyu', 'ひゅ'],
+  ['hyo', 'ひょ'],
+  ['bya', 'びゃ'],
+  ['byu', 'びゅ'],
+  ['byo', 'びょ'],
+  ['pya', 'ぴゃ'],
+  ['pyu', 'ぴゅ'],
+  ['pyo', 'ぴょ'],
+  ['gya', 'ぎゃ'],
+  ['gyu', 'ぎゅ'],
+  ['gyo', 'ぎょ'],
+  ['kya', 'きゃ'],
+  ['kyu', 'きゅ'],
+  ['kyo', 'きょ'],
+  ['tya', 'ちゃ'],
+  ['tyu', 'ちゅ'],
+  ['tyo', 'ちょ'],
   // 2文字
-  ['ka', 'か'], ['ki', 'き'], ['ku', 'く'], ['ke', 'け'], ['ko', 'こ'],
-  ['sa', 'さ'], ['si', 'し'], ['su', 'す'], ['se', 'せ'], ['so', 'そ'],
-  ['ta', 'た'], ['ti', 'ち'], ['tu', 'つ'], ['te', 'て'], ['to', 'と'],
-  ['na', 'な'], ['ni', 'に'], ['nu', 'ぬ'], ['ne', 'ね'], ['no', 'の'],
-  ['ha', 'は'], ['hi', 'ひ'], ['hu', 'ふ'], ['fu', 'ふ'], ['he', 'へ'], ['ho', 'ほ'],
-  ['ma', 'ま'], ['mi', 'み'], ['mu', 'む'], ['me', 'め'], ['mo', 'も'],
-  ['ya', 'や'], ['yu', 'ゆ'], ['yo', 'よ'],
-  ['ra', 'ら'], ['ri', 'り'], ['ru', 'る'], ['re', 'れ'], ['ro', 'ろ'],
-  ['wa', 'わ'], ['wi', 'ゐ'], ['we', 'ゑ'], ['wo', 'を'],
-  ['ga', 'が'], ['gi', 'ぎ'], ['gu', 'ぐ'], ['ge', 'げ'], ['go', 'ご'],
-  ['za', 'ざ'], ['zi', 'じ'], ['zu', 'ず'], ['ze', 'ぜ'], ['zo', 'ぞ'],
-  ['da', 'だ'], ['di', 'ぢ'], ['du', 'づ'], ['de', 'で'], ['do', 'ど'],
-  ['ba', 'ば'], ['bi', 'び'], ['bu', 'ぶ'], ['be', 'べ'], ['bo', 'ぼ'],
-  ['pa', 'ぱ'], ['pi', 'ぴ'], ['pu', 'ぷ'], ['pe', 'ぺ'], ['po', 'ぽ'],
-  ['ja', 'じゃ'], ['ji', 'じ'], ['ju', 'じゅ'], ['je', 'じぇ'], ['jo', 'じょ'],
+  ['ka', 'か'],
+  ['ki', 'き'],
+  ['ku', 'く'],
+  ['ke', 'け'],
+  ['ko', 'こ'],
+  ['sa', 'さ'],
+  ['si', 'し'],
+  ['su', 'す'],
+  ['se', 'せ'],
+  ['so', 'そ'],
+  ['ta', 'た'],
+  ['ti', 'ち'],
+  ['tu', 'つ'],
+  ['te', 'て'],
+  ['to', 'と'],
+  ['na', 'な'],
+  ['ni', 'に'],
+  ['nu', 'ぬ'],
+  ['ne', 'ね'],
+  ['no', 'の'],
+  ['ha', 'は'],
+  ['hi', 'ひ'],
+  ['hu', 'ふ'],
+  ['fu', 'ふ'],
+  ['he', 'へ'],
+  ['ho', 'ほ'],
+  ['ma', 'ま'],
+  ['mi', 'み'],
+  ['mu', 'む'],
+  ['me', 'め'],
+  ['mo', 'も'],
+  ['ya', 'や'],
+  ['yu', 'ゆ'],
+  ['yo', 'よ'],
+  ['ra', 'ら'],
+  ['ri', 'り'],
+  ['ru', 'る'],
+  ['re', 'れ'],
+  ['ro', 'ろ'],
+  ['wa', 'わ'],
+  ['wi', 'ゐ'],
+  ['we', 'ゑ'],
+  ['wo', 'を'],
+  ['ga', 'が'],
+  ['gi', 'ぎ'],
+  ['gu', 'ぐ'],
+  ['ge', 'げ'],
+  ['go', 'ご'],
+  ['za', 'ざ'],
+  ['zi', 'じ'],
+  ['zu', 'ず'],
+  ['ze', 'ぜ'],
+  ['zo', 'ぞ'],
+  ['da', 'だ'],
+  ['di', 'ぢ'],
+  ['du', 'づ'],
+  ['de', 'で'],
+  ['do', 'ど'],
+  ['ba', 'ば'],
+  ['bi', 'び'],
+  ['bu', 'ぶ'],
+  ['be', 'べ'],
+  ['bo', 'ぼ'],
+  ['pa', 'ぱ'],
+  ['pi', 'ぴ'],
+  ['pu', 'ぷ'],
+  ['pe', 'ぺ'],
+  ['po', 'ぽ'],
+  ['ja', 'じゃ'],
+  ['ji', 'じ'],
+  ['ju', 'じゅ'],
+  ['je', 'じぇ'],
+  ['jo', 'じょ'],
   // 1文字
-  ['a', 'あ'], ['i', 'い'], ['u', 'う'], ['e', 'え'], ['o', 'お'],
+  ['a', 'あ'],
+  ['i', 'い'],
+  ['u', 'う'],
+  ['e', 'え'],
+  ['o', 'お'],
   ['n', 'ん'],
 ];
 
@@ -45,7 +139,12 @@ export function romajiToHiragana(str) {
 
   while (s.length > 0) {
     // っ の処理（子音の重複）
-    if (s.length >= 2 && s[0] === s[1] && s[0] !== 'n' && !/[aiueo]/.test(s[0])) {
+    if (
+      s.length >= 2 &&
+      s[0] === s[1] &&
+      s[0] !== 'n' &&
+      !/[aiueo]/.test(s[0])
+    ) {
       result += 'っ';
       s = s.slice(1);
       continue;
@@ -70,14 +169,14 @@ export function romajiToHiragana(str) {
 
 // カタカナ→ひらがな
 export function katakanaToHiragana(str) {
-  return str.replace(/[\u30A1-\u30F6]/g, c =>
+  return str.replace(/[\u30A1-\u30F6]/g, (c) =>
     String.fromCharCode(c.charCodeAt(0) - 0x60)
   );
 }
 
 // ひらがな→カタカナ
 export function hiraganaToKatakana(str) {
-  return str.replace(/[\u3041-\u3096]/g, c =>
+  return str.replace(/[\u3041-\u3096]/g, (c) =>
     String.fromCharCode(c.charCodeAt(0) + 0x60)
   );
 }
@@ -85,7 +184,9 @@ export function hiraganaToKatakana(str) {
 // 文字列を正規化（スペース除去、小文字化、カタカナ→ひらがな）
 function normalizeText(str) {
   if (!str) return '';
-  return katakanaToHiragana(str.toLowerCase().replace(/\s+/g, ''));
+  return katakanaToHiragana(
+    str.normalize('NFKC').toLowerCase().replace(/\s+/g, '')
+  );
 }
 
 // ローマ字チェック
@@ -118,33 +219,47 @@ function getQueryVariants(query) {
     }
   }
 
-  return [...variants].filter(v => v.length > 0);
+  return [...variants].filter((v) => v.length > 0);
 }
 
 // メイン検索関数
+const targetCache = new WeakMap();
+function getTargets(song) {
+  if (!targetCache.has(song))
+    targetCache.set(
+      song,
+      [
+        song.name,
+        song.artist,
+        song.streamTitle || '',
+        ...(Array.isArray(song.tags) ? song.tags : []),
+      ].map(normalizeText)
+    );
+  return targetCache.get(song);
+}
+
 export function searchSongs(songs, query, typeFilter = null) {
   let results = songs;
 
   // タイプフィルタ
   if (typeFilter) {
-    results = results.filter(s => s.streamType === typeFilter);
+    results = results.filter((s) => s.streamType === typeFilter);
   }
 
   if (!query || !query.trim()) return results;
 
-  const variants = getQueryVariants(query);
+  const terms = query
+    .normalize('NFKC')
+    .trim()
+    .split(/\s+/)
+    .map((term) => getQueryVariants(term).map(normalizeText));
 
-  return results.filter(song => {
-    const targets = [
-      normalizeText(song.name),
-      normalizeText(song.artist),
-      normalizeText(song.streamTitle || ''),
-      // フリーワードタグも検索対象
-      ...(song.tags || []).map(t => normalizeText(t)),
-    ];
-
-    return variants.some(variant =>
-      targets.some(target => target.includes(variant))
+  return results.filter((song) => {
+    const targets = getTargets(song);
+    return terms.every((variants) =>
+      variants.some((variant) =>
+        targets.some((target) => target.includes(variant))
+      )
     );
   });
 }
