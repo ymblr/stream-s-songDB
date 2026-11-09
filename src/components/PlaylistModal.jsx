@@ -8,6 +8,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { MusicIcon } from './Icons';
+import { refreshPlaylistCatalog } from '../hooks/usePlaylistCatalog';
 
 const COLORS = [
   '#9c342d',
@@ -42,6 +43,7 @@ export default function PlaylistModal({ onClose, onSave, playlist = null }) {
           createdAt: serverTimestamp(),
         });
       }
+      await refreshPlaylistCatalog(true);
       onSave?.();
     } catch (e) {
       alert('保存に失敗しました: ' + e.message);

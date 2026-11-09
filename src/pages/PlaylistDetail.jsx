@@ -13,6 +13,7 @@ import {
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { usePlayer } from '../contexts/PlayerContext';
+import { refreshPlaylistCatalog } from '../hooks/usePlaylistCatalog';
 import {
   DndContext,
   closestCenter,
@@ -297,6 +298,7 @@ export default function PlaylistDetail() {
   const handleDelete = async () => {
     if (!confirm(`「${playlist.name}」を削除しますか？`)) return;
     await deleteDoc(doc(db, 'playlists', id));
+    await refreshPlaylistCatalog(true);
     navigate('/playlists');
   };
 

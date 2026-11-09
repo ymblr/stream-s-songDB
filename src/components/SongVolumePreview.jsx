@@ -9,6 +9,7 @@ import {
   applyPlayerVolume,
   clampSongVolume,
   getEffectiveVolume,
+  DEFAULT_VOLUME,
 } from '../utils/volume';
 import { PlayIcon, PauseIcon } from './Icons';
 
@@ -21,7 +22,7 @@ export default function SongVolumePreview({
   disabled = false,
 }) {
   const mainPlayer = usePlayer();
-  const masterVolume = mainPlayer?.volume ?? 80;
+  const masterVolume = mainPlayer?.volume ?? DEFAULT_VOLUME;
   const effectiveVolume = getEffectiveVolume(masterVolume, { volumePercent });
   const atLimit = effectiveVolume === 100;
   const [activated, setActivated] = useState(false);

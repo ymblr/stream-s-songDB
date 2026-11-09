@@ -1,143 +1,169 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
-  collection,
-  getDocs,
-  query,
-  orderBy,
-  addDoc,
-  serverTimestamp,
-} from 'firebase/firestore';
-import { db } from '../firebase';
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  rectSortingStrategy,
+  useSortable,
+  arrayMove,
+  sortableKeyboardCoordinates,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useAuth } from '../contexts/AuthContext';
+import { usePlaylistCatalog } from '../hooks/usePlaylistCatalog';
 import PasswordModal from '../components/PasswordModal';
 import PlaylistModal from '../components/PlaylistModal';
 import PlaylistCard from '../components/PlaylistCard';
+import { GripIcon, PlusIcon, ListIcon } from '../components/Icons';
+
+function SortablePlaylist({ playlist, canSort }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: playlist.id, disabled: !canSort });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`playlist-sortable${isDragging ? ' is-dragging' : ''}`}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+    >
+      <PlaylistCard playlist={playlist} />
+      {canSort && (
+        <button
+          type="button"
+          className="playlist-drag-handle btn-icon"
+          {...attributes}
+          {...listeners}
+          aria-label={`${playlist.name}の表示順を変更`}
+          title="ドラッグで並べ替え"
+        >
+          <GripIcon size={19} />
+        </button>
+      )}
+    </div>
+  );
+}
 
 export default function Playlists() {
   const { isAuthed } = useAuth();
-  const [playlists, setPlaylists] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { playlists, loading, saving, error, notice, refresh, saveOrder } =
+    usePlaylistCatalog();
   const [showCreate, setShowCreate] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-
-  const fetchPlaylists = async () => {
-    try {
-      const snap = await getDocs(
-        query(collection(db, 'playlists'), orderBy('createdAt', 'desc'))
-      );
-      setPlaylists(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    } catch (e) {
-      console.error(e);
-    }
-    setLoading(false);
+  const [passwordAction, setPasswordAction] = useState(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+  const handleDragEnd = ({ active, over }) => {
+    if (!isAuthed || saving || loading || !over || active.id === over.id)
+      return;
+    const from = playlists.findIndex((playlist) => playlist.id === active.id);
+    const to = playlists.findIndex((playlist) => playlist.id === over.id);
+    if (from !== -1 && to !== -1) saveOrder(arrayMove(playlists, from, to));
   };
-
-  useEffect(() => {
-    fetchPlaylists();
-  }, []);
-
-  const handleCreateClick = () => {
-    if (isAuthed) setShowCreate(true);
-    else setShowPassword(true);
-  };
-
   return (
-    <div className="page" style={{ maxWidth: 1200, margin: '0 auto' }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: 32,
-        }}
-      >
+    <div className="page">
+      <header className="page-heading playlist-page-heading">
         <div>
-          <h1
-            style={{
-              fontFamily: 'var(--font-logo)',
-              fontSize: 22,
-              fontWeight: 700,
-              marginBottom: 6,
-            }}
+          <p className="eyebrow">YOUR SELECTIONS</p>
+          <h1>プレイリスト</h1>
+          <p>{playlists.length}件のプレイリスト</p>
+        </div>
+        <div className="playlist-page-actions">
+          {!isAuthed && playlists.length > 1 && (
+            <button
+              className="btn-secondary"
+              onClick={() => setPasswordAction('sort')}
+            >
+              並べ替え
+            </button>
+          )}
+          <button
+            className="btn-primary"
+            onClick={() =>
+              isAuthed ? setShowCreate(true) : setPasswordAction('create')
+            }
           >
-            プレイリスト
-          </h1>
-          <p style={{ color: 'var(--text3)', fontSize: 13 }}>
-            {playlists.length}件のプレイリスト
-          </p>
+            <PlusIcon size={15} />
+            新規作成
+          </button>
         </div>
-        <button
-          className="btn-primary"
-          onClick={handleCreateClick}
-          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-        >
-          <span style={{ fontSize: 16 }}>＋</span> 新規作成
-        </button>
-      </div>
-
-      {loading ? (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-            gap: 16,
-          }}
-        >
-          {[...Array(4)].map((_, i) => (
-            <div
-              key={i}
-              style={{
-                background: 'var(--card)',
-                borderRadius: 'var(--radius-lg)',
-                aspectRatio: '1',
-                animation: 'pulse 1.5s infinite',
-              }}
-            />
-          ))}
-        </div>
-      ) : playlists.length === 0 ? (
-        <div
-          style={{
-            textAlign: 'center',
-            padding: '80px 20px',
-            color: 'var(--text3)',
-          }}
-        >
-          <div style={{ fontSize: 48, marginBottom: 16 }}>🎧</div>
-          <p style={{ fontSize: 16, marginBottom: 8 }}>
-            プレイリストがまだありません
-          </p>
-          <p style={{ fontSize: 13 }}>
-            「新規作成」からプレイリストを作りましょう
-          </p>
-        </div>
-      ) : (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-            gap: 16,
-          }}
-        >
-          {playlists.map((pl) => (
-            <PlaylistCard key={pl.id} playlist={pl} onUpdate={fetchPlaylists} />
-          ))}
+      </header>
+      {isAuthed && playlists.length > 1 && (
+        <p className="playlist-sort-help">
+          カード右上のハンドルをドラッグして並べ替え。変更は自動保存されます。キーボードではSpace
+          → 矢印キー → Spaceで操作できます。
+        </p>
+      )}
+      <p className="playlist-order-status" role="status">
+        {saving ? '並び順を保存中…' : notice}
+      </p>
+      {error && (
+        <div className="form-error" role="alert">
+          {error}
+          <button className="text-link" disabled={saving} onClick={refresh}>
+            再読み込み
+          </button>
         </div>
       )}
-
-      {showPassword && (
+      {loading && !playlists.length ? (
+        <p className="empty-note">プレイリストを読み込み中…</p>
+      ) : !playlists.length ? (
+        <div className="empty-state">
+          <ListIcon size={32} />
+          <h2>プレイリストがまだありません</h2>
+          <p>「新規作成」からお気に入りの曲をまとめましょう。</p>
+        </div>
+      ) : (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+          accessibility={{
+            screenReaderInstructions: {
+              draggable:
+                'Spaceキーで選択し、矢印キーで移動、Spaceキーで確定します。Escapeキーで取り消します。',
+            },
+          }}
+        >
+          <SortableContext
+            items={playlists.map((playlist) => playlist.id)}
+            strategy={rectSortingStrategy}
+          >
+            <div className="playlist-grid" aria-busy={saving}>
+              {playlists.map((playlist) => (
+                <SortablePlaylist
+                  key={playlist.id}
+                  playlist={playlist}
+                  canSort={isAuthed && !saving && !loading}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
+      )}
+      {passwordAction && (
         <PasswordModal
-          onClose={() => setShowPassword(false)}
-          onSuccess={() => setShowCreate(true)}
+          onClose={() => setPasswordAction(null)}
+          onSuccess={() => {
+            if (passwordAction === 'create') setShowCreate(true);
+          }}
         />
       )}
       {showCreate && (
         <PlaylistModal
           onClose={() => setShowCreate(false)}
-          onSave={() => {
-            fetchPlaylists();
-            setShowCreate(false);
-          }}
+          onSave={() => setShowCreate(false)}
         />
       )}
     </div>

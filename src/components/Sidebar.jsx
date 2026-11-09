@@ -1,9 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useSidebar } from '../contexts/SidebarContext';
 import { usePlayer } from '../contexts/PlayerContext';
-import { collection, getDocs, query, orderBy } from 'firebase/firestore';
-import { db } from '../firebase';
+import { usePlaylistCatalog } from '../hooks/usePlaylistCatalog';
 import { useSongCatalog } from '../hooks/useSongCatalog';
 import MarqueeText from './MarqueeText';
 import {
@@ -21,7 +20,8 @@ export default function Sidebar() {
   const { sidebarOpen } = useSidebar();
   const { history, currentSong, playSong } = usePlayer();
   const navigate = useNavigate();
-  const [playlists, setPlaylists] = useState([]);
+  const { playlists: allPlaylists } = usePlaylistCatalog();
+  const playlists = allPlaylists.slice(0, 6);
   const { songs } = useSongCatalog();
   const artists = useMemo(() => {
     const map = new Map();
@@ -31,16 +31,6 @@ export default function Sidebar() {
     });
     return [...map.values()].slice(0, 8);
   }, [songs]);
-
-  useEffect(() => {
-    getDocs(query(collection(db, 'playlists'), orderBy('createdAt', 'desc')))
-      .then((snap) =>
-        setPlaylists(
-          snap.docs.map((d) => ({ id: d.id, ...d.data() })).slice(0, 6)
-        )
-      )
-      .catch(() => {});
-  }, []);
 
   const linkCss = (isActive) => ({
     display: 'flex',

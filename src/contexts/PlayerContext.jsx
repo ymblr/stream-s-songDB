@@ -23,6 +23,8 @@ import {
   clampVolume,
   clampSongVolume,
   getEffectiveVolume,
+  getInitialVolume,
+  DEFAULT_VOLUME,
 } from '../utils/volume';
 
 const PlayerContext = createContext(null);
@@ -36,9 +38,7 @@ export function PlayerProvider({ children }) {
   const [showPlayer, setShowPlayer] = useState(false);
   const [loopMode, setLoopMode] = useState('none');
   const [shuffle, setShuffle] = useState(false);
-  const [volume, setVolumeState] = useState(() =>
-    parseInt(localStorage.getItem('uta_volume') || '80')
-  );
+  const [volume, setVolumeState] = useState(getInitialVolume);
   const [history, setHistory] = useState([]);
   const [queue, setQueue] = useState([]);
   // 関連曲自動再生中フラグ（UIで「自動再生中」を示すために使用可能）
@@ -56,6 +56,8 @@ export function PlayerProvider({ children }) {
   const playbackRef = useRef({ ready: false, generation: 0 });
   const generationRef = useRef(0);
   const endingRef = useRef(false);
+  const playbackRequestedRef = useRef(false);
+  const visibilityTimerRef = useRef(null);
 
   // stable refs
   const songRef = useRef(null);
@@ -131,34 +133,58 @@ export function PlayerProvider({ children }) {
     else releaseWakeLock();
   }, [isPlaying]);
 
-  // ── Page Visibility (PC スリープ復帰) ────────────────────────
+  // Recover using the player's native ended state, even when its clock reset to 0.
   useEffect(() => {
-    const onVisible = async () => {
-      if (document.visibilityState !== 'visible') return;
-      if (isPlayRef.current) await requestWakeLock();
-      const player = ytRef.current;
-      const song = songRef.current;
-      if (!player || !song) return;
-      setTimeout(() => {
+    const onVisible = () => {
+      clearTimeout(visibilityTimerRef.current);
+      if (
+        document.visibilityState !== 'visible' ||
+        !playbackRequestedRef.current
+      )
+        return;
+      const generation = generationRef.current;
+      visibilityTimerRef.current = setTimeout(() => {
+        if (
+          document.visibilityState !== 'visible' ||
+          !playbackRequestedRef.current ||
+          generation !== generationRef.current
+        )
+          return;
+        const player = ytRef.current,
+          song = songRef.current;
+        if (!player || !song || !readyRef.current) return;
         try {
           const state = player.getPlayerState?.();
-          const t = player.getCurrentTime?.() ?? 0;
-          if (isPlayRef.current) {
-            if (state !== 1) {
-              if (t >= song.endTime) handleEndRef.current?.();
-              else if (t >= song.startTime) player.playVideo();
-              else {
-                player.seekTo(song.startTime, true);
-                player.playVideo();
-              }
-            }
-            startMon();
+          const time = player.getCurrentTime?.() ?? 0;
+          const matches =
+            extractVideoId(player.getVideoUrl?.() || '') === song.videoId;
+          if (!matches) return;
+          if (matches && state === 0 && playbackRef.current.started) {
+            handleEndRef.current?.(true);
+            return;
           }
+          if (matches && playbackRef.current.ready && time >= song.endTime) {
+            handleEndRef.current?.();
+            return;
+          }
+          if (state !== 1) {
+            if (time < song.startTime) player.seekTo(song.startTime, true);
+            player.playVideo();
+          }
+          startMon();
+          requestWakeLock();
         } catch {}
       }, 600);
     };
     document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    window.addEventListener('pageshow', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+      window.removeEventListener('pageshow', onVisible);
+      clearTimeout(visibilityTimerRef.current);
+    };
   }, []);
 
   // ── Media Session ─────────────────────────────────────────────
@@ -189,9 +215,11 @@ export function PlayerProvider({ children }) {
   const registerMediaSessionHandlers = useCallback(() => {
     if (!('mediaSession' in navigator)) return;
     navigator.mediaSession.setActionHandler('play', () => {
+      playbackRequestedRef.current = true;
       ytRef.current?.playVideo();
     });
     navigator.mediaSession.setActionHandler('pause', () => {
+      playbackRequestedRef.current = false;
       ytRef.current?.pauseVideo();
     });
     navigator.mediaSession.setActionHandler('nexttrack', () => playNext());
@@ -253,10 +281,20 @@ export function PlayerProvider({ children }) {
       const song = songRef.current;
       if (!p || !song || !endRef.current || endingRef.current) return;
       try {
-        if (p.getPlayerState?.() === 1) {
+        const state = p.getPlayerState?.();
+        const videoId = extractVideoId(p.getVideoUrl?.() || '');
+        if (videoId !== song.videoId) return;
+        if (
+          state === 0 &&
+          playbackRequestedRef.current &&
+          playbackRef.current.started
+        ) {
+          handleEndRef.current?.(true);
+          return;
+        }
+        if (state === 1) {
           const t = p.getCurrentTime?.();
-          const videoId = extractVideoId(p.getVideoUrl?.() || '');
-          if (videoId !== song.videoId || !Number.isFinite(t)) return;
+          if (!Number.isFinite(t)) return;
           // Ignore old-video/ad clocks until this clip's content is observed.
           if (t >= song.startTime - 0.5 && t < song.endTime) {
             playbackRef.current.ready = true;
@@ -358,6 +396,7 @@ export function PlayerProvider({ children }) {
   // ── Load song ──────────────────────────────────────────────────
   const loadSong = useCallback(
     (song, playlist = [], index = 0, skipHistory = false, autoPlay = false) => {
+      playbackRequestedRef.current = true;
       generationRef.current++;
       endingRef.current = false;
       playbackRef.current = { ready: false, generation: generationRef.current };
@@ -411,8 +450,14 @@ export function PlayerProvider({ children }) {
   }, []);
 
   // ── handleEnd ────────────────────────────────────────────────
-  handleEndRef.current = () => {
-    if (!songRef.current || endingRef.current || !playbackRef.current.ready)
+  handleEndRef.current = (nativeEnded = false) => {
+    if (
+      !songRef.current ||
+      !playbackRequestedRef.current ||
+      endingRef.current ||
+      (!playbackRef.current.ready &&
+        !(nativeEnded && playbackRef.current.started))
+    )
       return;
     endingRef.current = true;
     clearMon();
@@ -463,6 +508,7 @@ export function PlayerProvider({ children }) {
             loadSong(related, [related], 0, false, true);
           } else {
             setIsAutoPlay(false);
+            playbackRequestedRef.current = false;
             // 関連曲が見つからない場合のみ停止
             setIsPlaying(false);
             ytRef.current?.pauseVideo();
@@ -474,6 +520,7 @@ export function PlayerProvider({ children }) {
         })
         .catch(() => {
           if (generation !== generationRef.current) return;
+          playbackRequestedRef.current = false;
           setIsAutoPlay(false);
           setIsPlaying(false);
           ytRef.current?.pauseVideo();
@@ -484,6 +531,7 @@ export function PlayerProvider({ children }) {
     }
 
     // 6. 完全停止
+    playbackRequestedRef.current = false;
     setIsPlaying(false);
     ytRef.current?.pauseVideo();
     updateMediaSession(songRef.current, false);
@@ -509,11 +557,13 @@ export function PlayerProvider({ children }) {
     const p = ytRef.current;
     if (!p) return;
     if (isPlayRef.current) {
+      playbackRequestedRef.current = false;
       p.pauseVideo();
       setIsPlaying(false);
       clearMon();
       updateMediaSession(songRef.current, false);
     } else {
+      playbackRequestedRef.current = true;
       p.playVideo();
       setIsPlaying(true);
       startMon();
@@ -547,6 +597,7 @@ export function PlayerProvider({ children }) {
   }, [loadSong]);
 
   const stopPlayer = useCallback(() => {
+    playbackRequestedRef.current = false;
     generationRef.current++;
     endingRef.current = true;
     playbackRef.current = { ready: false, generation: generationRef.current };
@@ -589,10 +640,12 @@ export function PlayerProvider({ children }) {
   }, []);
 
   const changeVolume = useCallback((v) => {
-    const c = clampVolume(v, 80);
+    const c = clampVolume(v, DEFAULT_VOLUME);
     setVolumeState(c);
     volRef.current = c;
-    localStorage.setItem('uta_volume', String(c));
+    try {
+      localStorage.setItem('uta_volume', String(c));
+    } catch {}
     const p = ytRef.current;
     if (p) applyPlayerVolume(p, c, songRef.current);
   }, []);
@@ -624,6 +677,7 @@ export function PlayerProvider({ children }) {
   }, []);
 
   const pauseForPreview = useCallback(() => {
+    playbackRequestedRef.current = false;
     // Invalidate a related-song request that might otherwise restart playback.
     generationRef.current++;
     clearMon();
@@ -696,7 +750,7 @@ export function PlayerProvider({ children }) {
           break;
         case 'm':
           e.preventDefault();
-          changeVolume(volRef.current === 0 ? 80 : 0);
+          changeVolume(volRef.current === 0 ? DEFAULT_VOLUME : 0);
           break;
         case 's':
           e.preventDefault();
@@ -741,6 +795,15 @@ export function PlayerProvider({ children }) {
     (state) => {
       if (!songRef.current) return;
       if (state === 1) {
+        const player = ytRef.current,
+          song = songRef.current;
+        if (extractVideoId(player?.getVideoUrl?.() || '') === song.videoId) {
+          // No dependency on a background timer having ticked before native ENDED.
+          playbackRef.current.started = true;
+          const time = player.getCurrentTime?.();
+          if (time >= song.startTime - 0.5 && time < song.endTime)
+            playbackRef.current.ready = true;
+        }
         setIsPlaying(true);
         if (endRef.current) startMon();
         updateMediaSession(songRef.current, true);
@@ -749,13 +812,18 @@ export function PlayerProvider({ children }) {
         clearMon();
         updateMediaSession(songRef.current, false);
       } else if (state === 0) {
-        handleEndRef.current?.();
+        if (
+          extractVideoId(ytRef.current?.getVideoUrl?.() || '') ===
+          songRef.current.videoId
+        )
+          handleEndRef.current?.(true);
       }
     },
     [startMon, updateMediaSession]
   );
 
   const onPlayerError = useCallback(() => {
+    playbackRequestedRef.current = false;
     clearMon();
     clearLoadTimer();
     setIsPlaying(false);

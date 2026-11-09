@@ -6,6 +6,8 @@ import {
   getSongVolume,
   getEffectiveVolume,
   applyPlayerVolume,
+  getInitialVolume,
+  DEFAULT_VOLUME,
 } from '../src/utils/volume.js';
 
 test('existing songs retain their original volume', () => {
@@ -32,7 +34,7 @@ test('invalid and out-of-range volume values are safe', () => {
   assert.equal(clampVolume(200), 100);
   for (const value of [null, undefined, NaN, Infinity, '50'])
     assert.equal(clampVolume(value), 100);
-  assert.equal(getEffectiveVolume(NaN, {}), 80);
+  assert.equal(getEffectiveVolume(NaN, {}), DEFAULT_VOLUME);
 });
 test('zero volume remains muted when the player is refreshed', () => {
   const player = {
@@ -52,4 +54,49 @@ test('zero volume remains muted when the player is refreshed', () => {
   applyPlayerVolume(player, 80, { volumePercent: 50 });
   assert.equal(player.volume, 40);
   assert.equal(player.muted, false);
+});
+
+function storage(values = {}) {
+  const data = new Map(Object.entries(values));
+  return {
+    getItem: (key) => data.get(key) ?? null,
+    setItem: (key, value) => data.set(key, value),
+  };
+}
+
+test('new clients start at YouTube 40% without a song correction', () => {
+  const preferences = storage();
+  assert.equal(getInitialVolume(preferences), 40);
+  assert.equal(getEffectiveVolume(getInitialVolume(preferences), {}), 40);
+  assert.equal(preferences.getItem('uta_volume'), '40');
+});
+
+test('old persisted 80% is migrated once, including Strict Mode initialization', () => {
+  const preferences = storage({ uta_volume: '80' });
+  assert.equal(getInitialVolume(preferences), 40);
+  assert.equal(getInitialVolume(preferences), 40);
+  preferences.setItem('uta_volume', '80');
+  assert.equal(getInitialVolume(preferences), 80);
+});
+
+test('existing custom volume and mute are preserved', () => {
+  for (const volume of [0, 15, 40, 65, 100]) {
+    assert.equal(
+      getInitialVolume(storage({ uta_volume: String(volume) })),
+      volume
+    );
+  }
+});
+
+test('invalid or inaccessible saved preferences fall back to 40%', () => {
+  for (const raw of ['', 'abc', 'NaN', '-1', '101'])
+    assert.equal(getInitialVolume(storage({ uta_volume: raw })), 40);
+  assert.equal(
+    getInitialVolume({
+      getItem() {
+        throw new Error('storage denied');
+      },
+    }),
+    40
+  );
 });

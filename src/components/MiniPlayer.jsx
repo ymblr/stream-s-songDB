@@ -25,6 +25,7 @@ import {
 } from './Icons';
 import MarqueeText from './MarqueeText';
 import Seekbar from './Seekbar';
+import { DEFAULT_VOLUME } from '../utils/volume';
 
 function getDuration(song) {
   if (!song) return null;
@@ -103,7 +104,7 @@ function VolumeBtn({ volume, onChange }) {
       }}
     >
       <button
-        onClick={() => onChange(volume === 0 ? 80 : 0)}
+        onClick={() => onChange(volume === 0 ? DEFAULT_VOLUME : 0)}
         style={{
           fontSize: 11,
           fontWeight: 600,
@@ -146,7 +147,7 @@ function VolumeBtn({ volume, onChange }) {
               setOpen(true);
             }
           } else {
-            onChange(volume === 0 ? 80 : 0);
+            onChange(volume === 0 ? DEFAULT_VOLUME : 0);
           }
         }}
         onMouseEnter={() => {

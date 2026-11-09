@@ -718,6 +718,56 @@ fieldset {
   overflow: hidden;
   background: var(--card);
 }
+.playlist-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+  gap: 18px;
+}
+.playlist-sortable {
+  position: relative;
+  min-width: 0;
+}
+.playlist-sortable.is-dragging {
+  z-index: 10;
+  opacity: 0.8;
+  box-shadow: var(--shadow-lg);
+}
+.playlist-drag-handle {
+  position: absolute;
+  top: 15px;
+  right: 12px;
+  min-width: 44px;
+  min-height: 44px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  cursor: grab;
+  touch-action: none;
+}
+.playlist-drag-handle:active {
+  cursor: grabbing;
+}
+.playlist-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.playlist-page-actions .btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.playlist-sort-help {
+  color: var(--text3);
+  font-size: 11px;
+  margin-bottom: 12px;
+}
+.playlist-order-status {
+  min-height: 18px;
+  font-size: 11px;
+  color: var(--text3);
+  margin-bottom: 12px;
+}
 .playlist-card:hover {
   border-color: var(--border2);
 }
