@@ -12,6 +12,7 @@ import {
   DEFAULT_VOLUME,
 } from '../utils/volume';
 import { PlayIcon, PauseIcon } from './Icons';
+import { createYouTubeClipRecovery } from '../utils/youtubeRecovery';
 
 export default function SongVolumePreview({
   videoId,
@@ -34,6 +35,8 @@ export default function SongVolumePreview({
   const readyRef = useRef(false);
   const playIntentRef = useRef(false);
   const observedContentRef = useRef(false);
+  const recoveryRef = useRef(null);
+  if (!recoveryRef.current) recoveryRef.current = createYouTubeClipRecovery();
   const valid = Boolean(
     videoId &&
     Number.isFinite(startTime) &&
@@ -55,6 +58,7 @@ export default function SongVolumePreview({
   useEffect(() => {
     playIntentRef.current = false;
     observedContentRef.current = false;
+    recoveryRef.current.reset(valid ? configRef.current : null);
     setElapsed(0);
     setError('');
     const player = playerRef.current;
@@ -83,7 +87,8 @@ export default function SongVolumePreview({
         host.appendChild(mount);
         const syncVolume = (target) => {
           const config = configRef.current;
-          applyPlayerVolume(target, config.masterVolume, config);
+          if (recoveryRef.current.active) target.setVolume(0);
+          else applyPlayerVolume(target, config.masterVolume, config);
         };
         player = new window.YT.Player(mount, {
           width: '100%',
@@ -111,6 +116,7 @@ export default function SongVolumePreview({
                 startSeconds: config.startTime,
                 endSeconds: config.endTime,
               };
+              recoveryRef.current.reset(config);
               if (playIntentRef.current) event.target.loadVideoById(clip);
               else {
                 event.target.cueVideoById(clip);
@@ -119,12 +125,19 @@ export default function SongVolumePreview({
             },
             onStateChange: (event) => {
               if (cancelled) return;
+              if (recoveryRef.current.active) {
+                recoveryRef.current.onStateChange(event.data);
+                return;
+              }
               const config = configRef.current;
+              if (event.data === 3 && config.valid && !config.disabled)
+                playIntentRef.current = true;
               if (event.data === 1) {
                 if (!config.valid || config.disabled) {
                   playerRef.current?.pauseVideo();
                   return;
                 }
+                playIntentRef.current = true;
                 mainPlayer?.pauseForPreview?.();
                 syncVolume(playerRef.current);
                 setStatus('playing');
@@ -135,8 +148,32 @@ export default function SongVolumePreview({
                 setElapsed(config.endTime - config.startTime);
               }
             },
-            onError: () => {
+            onError: (event) => {
               if (!cancelled) {
+                if (
+                  playIntentRef.current &&
+                  recoveryRef.current.retry(event.data, playerRef.current, {
+                    onRecovered: () => {
+                      observedContentRef.current = true;
+                      mainPlayer?.pauseForPreview?.();
+                      syncVolume(playerRef.current);
+                      setStatus('playing');
+                      setError('');
+                    },
+                    onFailed: () => {
+                      playIntentRef.current = false;
+                      setStatus('error');
+                      setError(
+                        'プレビューを再生できません。もう一度お試しください。'
+                      );
+                    },
+                  })
+                ) {
+                  observedContentRef.current = false;
+                  setStatus('loading');
+                  return;
+                }
+                recoveryRef.current.cancel();
                 playIntentRef.current = false;
                 setStatus('error');
                 setError(
@@ -146,6 +183,7 @@ export default function SongVolumePreview({
             },
             onAutoplayBlocked: () => {
               if (!cancelled) {
+                recoveryRef.current.setPaused(true);
                 setStatus('paused');
                 setError('動画内の再生ボタンを押して試聴を開始してください。');
               }
@@ -168,6 +206,7 @@ export default function SongVolumePreview({
       const current = playerRef.current;
       if (!readyRef.current || !current || !config.valid || config.disabled)
         return;
+      if (recoveryRef.current.active) return;
       try {
         if (
           current.getPlayerState() !== 1 ||
@@ -194,6 +233,7 @@ export default function SongVolumePreview({
     return () => {
       cancelled = true;
       clearInterval(timer);
+      recoveryRef.current.cancel();
       readyRef.current = false;
       playerRef.current = null;
       player?.destroy();
@@ -202,13 +242,17 @@ export default function SongVolumePreview({
   }, [activated, videoId, mainPlayer?.pauseForPreview]);
 
   useEffect(() => {
-    if (playerRef.current && readyRef.current)
-      applyPlayerVolume(playerRef.current, masterVolume, { volumePercent });
+    if (playerRef.current && readyRef.current) {
+      if (recoveryRef.current.active) playerRef.current.setVolume(0);
+      else
+        applyPlayerVolume(playerRef.current, masterVolume, { volumePercent });
+    }
   }, [masterVolume, volumePercent]);
 
   useEffect(() => {
     if (!disabled) return;
     playIntentRef.current = false;
+    recoveryRef.current.setPaused(true);
     if (readyRef.current) playerRef.current?.pauseVideo();
   }, [disabled]);
 
@@ -217,6 +261,7 @@ export default function SongVolumePreview({
     const player = playerRef.current;
     if (!restart && status === 'playing') {
       playIntentRef.current = false;
+      recoveryRef.current.setPaused(true);
       player?.pauseVideo();
       return;
     }
@@ -232,6 +277,13 @@ export default function SongVolumePreview({
       setStatus('loading');
       return;
     }
+    if (!restart && recoveryRef.current.active) {
+      recoveryRef.current.setPaused(false);
+      setStatus('loading');
+      player.playVideo();
+      return;
+    }
+    recoveryRef.current.reset(configRef.current);
     applyPlayerVolume(player, masterVolume, { volumePercent });
     if (
       !restart &&

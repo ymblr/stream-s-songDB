@@ -18,6 +18,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { extractVideoId } from '../utils/youtube';
+import { createYouTubeClipRecovery } from '../utils/youtubeRecovery';
 import {
   applyPlayerVolume,
   clampVolume,
@@ -58,6 +59,8 @@ export function PlayerProvider({ children }) {
   const endingRef = useRef(false);
   const playbackRequestedRef = useRef(false);
   const visibilityTimerRef = useRef(null);
+  const recoveryRef = useRef(null);
+  if (!recoveryRef.current) recoveryRef.current = createYouTubeClipRecovery();
 
   // stable refs
   const songRef = useRef(null);
@@ -152,7 +155,8 @@ export function PlayerProvider({ children }) {
           return;
         const player = ytRef.current,
           song = songRef.current;
-        if (!player || !song || !readyRef.current) return;
+        if (!player || !song || !readyRef.current || recoveryRef.current.active)
+          return;
         try {
           const state = player.getPlayerState?.();
           const time = player.getCurrentTime?.() ?? 0;
@@ -216,11 +220,14 @@ export function PlayerProvider({ children }) {
     if (!('mediaSession' in navigator)) return;
     navigator.mediaSession.setActionHandler('play', () => {
       playbackRequestedRef.current = true;
+      recoveryRef.current.setPaused(false);
       ytRef.current?.playVideo();
     });
     navigator.mediaSession.setActionHandler('pause', () => {
       playbackRequestedRef.current = false;
+      recoveryRef.current.setPaused(true);
       ytRef.current?.pauseVideo();
+      if (recoveryRef.current.active) setIsPlaying(false);
     });
     navigator.mediaSession.setActionHandler('nexttrack', () => playNext());
     navigator.mediaSession.setActionHandler('previoustrack', () => {
@@ -280,6 +287,7 @@ export function PlayerProvider({ children }) {
       const p = ytRef.current;
       const song = songRef.current;
       if (!p || !song || !endRef.current || endingRef.current) return;
+      if (recoveryRef.current.active) return;
       try {
         const state = p.getPlayerState?.();
         const videoId = extractVideoId(p.getVideoUrl?.() || '');
@@ -315,6 +323,7 @@ export function PlayerProvider({ children }) {
   // ── Ad mitigation ─────────────────────────────────────────────
   const adMitigation = useCallback((player, song) => {
     clearLoadTimer();
+    recoveryRef.current.reset(song);
     const generation = generationRef.current;
     endRef.current = song.endTime;
     player.mute();
@@ -404,6 +413,7 @@ export function PlayerProvider({ children }) {
       setIsAutoPlay(autoPlay);
       clearMon();
       clearLoadTimer();
+      recoveryRef.current.reset(song);
       setCurrentSong(song);
       setCurrentPlaylist(playlist);
       setCurrentIndex(index);
@@ -558,12 +568,14 @@ export function PlayerProvider({ children }) {
     if (!p) return;
     if (isPlayRef.current) {
       playbackRequestedRef.current = false;
+      recoveryRef.current.setPaused(true);
       p.pauseVideo();
       setIsPlaying(false);
       clearMon();
       updateMediaSession(songRef.current, false);
     } else {
       playbackRequestedRef.current = true;
+      recoveryRef.current.setPaused(false);
       p.playVideo();
       setIsPlaying(true);
       startMon();
@@ -606,6 +618,7 @@ export function PlayerProvider({ children }) {
     queueRef.current = [];
     clearMon();
     clearLoadTimer();
+    recoveryRef.current.cancel();
     ytRef.current?.pauseVideo();
     silentAudioRef.current?.pause();
     setPlayerError('');
@@ -647,7 +660,10 @@ export function PlayerProvider({ children }) {
       localStorage.setItem('uta_volume', String(c));
     } catch {}
     const p = ytRef.current;
-    if (p) applyPlayerVolume(p, c, songRef.current);
+    if (p) {
+      if (recoveryRef.current.active) p.setVolume(0);
+      else applyPlayerVolume(p, c, songRef.current);
+    }
   }, []);
 
   const updateSongVolume = useCallback((id, value) => {
@@ -671,13 +687,16 @@ export function PlayerProvider({ children }) {
     if (songRef.current?.id === id) {
       songRef.current = update(songRef.current);
       setCurrentSong(songRef.current);
-      if (ytRef.current && readyRef.current)
-        applyPlayerVolume(ytRef.current, volRef.current, songRef.current);
+      if (ytRef.current && readyRef.current) {
+        if (recoveryRef.current.active) ytRef.current.setVolume(0);
+        else applyPlayerVolume(ytRef.current, volRef.current, songRef.current);
+      }
     }
   }, []);
 
   const pauseForPreview = useCallback(() => {
     playbackRequestedRef.current = false;
+    recoveryRef.current.setPaused(true);
     // Invalidate a related-song request that might otherwise restart playback.
     generationRef.current++;
     clearMon();
@@ -686,7 +705,7 @@ export function PlayerProvider({ children }) {
     setIsPlaying(false);
     if (pendRef.current) pendRef.current = { ...pendRef.current, paused: true };
     ytRef.current?.pauseVideo();
-    if (ytRef.current && readyRef.current)
+    if (ytRef.current && readyRef.current && !recoveryRef.current.active)
       applyPlayerVolume(ytRef.current, volRef.current, songRef.current);
     silentAudioRef.current?.pause();
     updateMediaSession(songRef.current, false);
@@ -794,6 +813,10 @@ export function PlayerProvider({ children }) {
   const onPlayerStateChange = useCallback(
     (state) => {
       if (!songRef.current) return;
+      if (recoveryRef.current.active) {
+        recoveryRef.current.onStateChange(state);
+        return;
+      }
       if (state === 1) {
         const player = ytRef.current,
           song = songRef.current;
@@ -822,21 +845,48 @@ export function PlayerProvider({ children }) {
     [startMon, updateMediaSession]
   );
 
-  const onPlayerError = useCallback(() => {
-    playbackRequestedRef.current = false;
-    clearMon();
-    clearLoadTimer();
-    setIsPlaying(false);
-    playbackRef.current.ready = false;
-    setPlayerError(
-      '動画を再生できません。YouTubeでの公開状態や接続を確認してください。'
-    );
-  }, []);
+  const onPlayerError = useCallback(
+    (code) => {
+      const player = ytRef.current;
+      clearLoadTimer();
+      if (
+        player &&
+        playbackRequestedRef.current &&
+        recoveryRef.current.retry(code, player, {
+          onRecovered: () => {
+            playbackRef.current.ready = true;
+            playbackRef.current.started = true;
+            applyPlayerVolume(player, volRef.current, songRef.current);
+            setIsPlaying(true);
+            startMon();
+            updateMediaSession(songRef.current, true);
+          },
+          onFailed: () => onPlayerError(),
+        })
+      ) {
+        playbackRef.current.ready = false;
+        playbackRef.current.started = false;
+        return;
+      }
+      recoveryRef.current.cancel();
+      playbackRequestedRef.current = false;
+      player?.pauseVideo();
+      clearMon();
+      clearLoadTimer();
+      setIsPlaying(false);
+      playbackRef.current.ready = false;
+      setPlayerError(
+        '動画を再生できません。YouTubeでの公開状態や接続を確認してください。'
+      );
+    },
+    [startMon, updateMediaSession]
+  );
 
   const onPlayerDestroy = useCallback((player) => {
     if (ytRef.current !== player) return;
     clearMon();
     clearLoadTimer();
+    recoveryRef.current.cancel();
     ytRef.current = null;
     readyRef.current = false;
   }, []);
@@ -845,6 +895,7 @@ export function PlayerProvider({ children }) {
     () => () => {
       clearMon();
       clearLoadTimer();
+      recoveryRef.current.cancel();
       silentAudioRef.current?.pause();
       releaseWakeLock();
     },

@@ -668,8 +668,8 @@ export default function MiniPlayer() {
             onStateChange: (e) => {
               if (!cancelled) onPlayerStateChange(e.data);
             },
-            onError: () => {
-              if (!cancelled) onPlayerError();
+            onError: (event) => {
+              if (!cancelled) onPlayerError(event.data);
             },
           },
         });
