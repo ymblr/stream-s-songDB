@@ -60,6 +60,44 @@ export function getThumbnailUrl(videoId, quality = 'hq') {
   return `https://img.youtube.com/vi/${videoId}/${qualityMap[quality] || 'hqdefault'}.jpg`;
 }
 
+export function getYouTubeEmbedUrl(videoId, playerVars, baseUrl) {
+  const params = new URLSearchParams({ enablejsapi: '1' });
+  for (const [key, value] of Object.entries(playerVars || {})) {
+    if (value !== undefined && value !== null) params.set(key, String(value));
+  }
+  // Preserve a protocol-relative src on HTTPS pages. Embedded-player extensions
+  // that target absolute https:// src attributes can otherwise alter playback.
+  // HTTP development pages still load YouTube over HTTPS.
+  const scheme = new URL(baseUrl).protocol === 'https:' ? '' : 'https:';
+  return `${scheme}//www.youtube.com/embed/${encodeURIComponent(videoId || '')}?${params}`;
+}
+
+let playerFrameId = 0;
+export function createYouTubePlayer(mount, options) {
+  const {
+    videoId,
+    width = 640,
+    height = 360,
+    playerVars,
+    ...playerOptions
+  } = options;
+  const frame = document.createElement('iframe');
+  frame.id = `uta-youtube-${++playerFrameId}`;
+  frame.title = 'YouTube video player';
+  frame.width = String(width);
+  frame.height = String(height);
+  frame.setAttribute('frameborder', '0');
+  frame.allow =
+    'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
+  frame.allowFullscreen = true;
+  frame.referrerPolicy = 'strict-origin-when-cross-origin';
+  frame.src = getYouTubeEmbedUrl(videoId, playerVars, document.baseURI);
+  mount.replaceWith(frame);
+  // All playerVars are already in the iframe URL. Passing them again can cause
+  // the API to regenerate the iframe and lose the original src attribute.
+  return new window.YT.Player(frame, playerOptions);
+}
+
 // YouTube oEmbedからビデオ情報を取得
 export async function fetchVideoInfo(videoId) {
   try {

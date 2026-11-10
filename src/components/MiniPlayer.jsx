@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { usePlayer } from '../contexts/PlayerContext';
 import {
   loadYouTubeAPI,
+  createYouTubePlayer,
   getThumbnailUrl,
   secondsToTimestamp,
 } from '../utils/youtube';
@@ -649,7 +650,7 @@ export default function MiniPlayer() {
         if (cancelled || !host) return;
         const mount = document.createElement('div');
         host.appendChild(mount);
-        player = new window.YT.Player(mount, {
+        player = createYouTubePlayer(mount, {
           videoId: '',
           playerVars: {
             autoplay: 0,

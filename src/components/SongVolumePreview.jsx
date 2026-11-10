@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { usePlayer } from '../contexts/PlayerContext';
 import {
   loadYouTubeAPI,
+  createYouTubePlayer,
   extractVideoId,
   secondsToTimestamp,
 } from '../utils/youtube';
@@ -90,7 +91,7 @@ export default function SongVolumePreview({
           if (recoveryRef.current.active) target.setVolume(0);
           else applyPlayerVolume(target, config.masterVolume, config);
         };
-        player = new window.YT.Player(mount, {
+        player = createYouTubePlayer(mount, {
           width: '100%',
           height: '100%',
           playerVars: {
